@@ -2324,17 +2324,34 @@ namespace SoopPinballCollector
 
         private static IEnumerable<string> FindBrowserCandidates()
         {
-            string[] candidates = new[]
-            {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google\\Chrome\\Application\\chrome.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google\\Chrome\\Application\\chrome.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google\\Chrome\\Application\\chrome.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft\\Edge\\Application\\msedge.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft\\Edge\\Application\\msedge.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Edge\\Application\\msedge.exe")
-            };
-
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string candidate in ExistingBrowserCandidates(GetChromeCandidates(), seen))
+            {
+                yield return candidate;
+            }
+
+            foreach (string candidate in ExistingBrowserCandidates(GetEdgeCandidates(), seen))
+            {
+                yield return candidate;
+            }
+        }
+
+        private static IEnumerable<string> GetChromeCandidates()
+        {
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google\\Chrome\\Application\\chrome.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google\\Chrome\\Application\\chrome.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google\\Chrome\\Application\\chrome.exe");
+        }
+
+        private static IEnumerable<string> GetEdgeCandidates()
+        {
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Edge\\Application\\msedge.exe");
+        }
+
+        private static IEnumerable<string> ExistingBrowserCandidates(IEnumerable<string> candidates, HashSet<string> seen)
+        {
             foreach (string candidate in candidates)
             {
                 if (File.Exists(candidate) && seen.Add(candidate))

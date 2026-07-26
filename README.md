@@ -9,7 +9,7 @@
 | 프로젝트 | 배포 파일 | 설명 |
 |---|---|---|
 | `TayoPinball` | `타요의 종겜핀볼.exe` | 현재 안정 버전입니다. 핀볼 사이트를 열고, 긴 목록은 클립보드 복사 방식으로 안내합니다. |
-| `TayoPinballAuto` | `타요의 종겜핀볼(자동).exe` | 긴 목록일 때 Chrome/Edge DevTools 연결을 이용해 핀볼 사이트 입력칸에 자동 반영을 시도합니다. |
+| `TayoPinballAuto` | `타요의 종겜핀볼(자동).exe` | 긴 목록일 때 Chrome을 우선으로 사용하고, 없으면 Edge를 fallback으로 사용해 핀볼 사이트 입력칸에 자동 반영을 시도합니다. |
 
 ## 주요 기능
 
@@ -62,7 +62,7 @@ TayoPinball.sln
 | 파일 | SHA256 |
 |---|---|
 | `타요의 종겜핀볼.exe` | `E34DBC96B801EB71846F335D29BBDAD912D48EA39817D6ABF0B1BF46FE2646CB` |
-| `타요의 종겜핀볼(자동).exe` | `78936130FF05C66BD8783706192DE9CA0D88D022B0A6AE67407D407D3960E2EF` |
+| `타요의 종겜핀볼(자동).exe` | `003A9B626B9CDAEA62339A8056C82492480D02831C40C2E852C4FAF381592BA5` |
 
 ## 버전 정보
 
@@ -72,4 +72,4 @@ TayoPinball.sln
 
 ## 보안 메모
 
-`TayoPinballAuto`는 핀볼 사이트 입력 자동 반영을 위해 브라우저의 원격 디버깅 포트와 DevTools WebSocket을 사용합니다. 이 방식은 기능상 필요하지만 일부 보안 엔진이나 VirusTotal ML 판정에서 더 민감하게 보일 수 있습니다.
+`TayoPinballAuto`는 핀볼 사이트 입력 자동 반영을 위해 Chrome을 먼저 찾고, Chrome이 없을 때만 Edge를 fallback으로 사용합니다. 이 과정에서 브라우저의 원격 디버깅 포트와 DevTools WebSocket을 사용하므로 일부 보안 엔진이나 VirusTotal ML 판정에서 더 민감하게 보일 수 있습니다.

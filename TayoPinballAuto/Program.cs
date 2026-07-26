@@ -1946,19 +1946,13 @@ namespace SoopPinballCollector
                 string names = NormalizePinballNames(_pinballText.Text);
                 if (names.Length == 0)
                 {
-                    Process.Start(PinballUrl);
+                    PinballSiteInjector.OpenInPreferredBrowser(PinballUrl);
                     return;
                 }
 
                 string url = BuildPinballSiteUrl(names);
-                if (url.Length <= DirectPinballUrlLimit)
-                {
-                    Process.Start(url);
-                    return;
-                }
-
                 Clipboard.SetText(names);
-                ShowToast("목록이 많아 핀볼 사이트에 직접 반영합니다.");
+                ShowToast("Chrome 우선으로 핀볼 사이트에 직접 반영합니다.");
                 bool injected = await PinballSiteInjector.OpenAndInjectAsync(PinballUrl, names);
                 if (injected)
                 {
@@ -1966,8 +1960,9 @@ namespace SoopPinballCollector
                 }
                 else
                 {
-                    Process.Start(PinballUrl);
-                    ShowToast("자동 반영에 실패해 목록을 클립보드에 복사했습니다.");
+                    string fallbackUrl = url.Length <= DirectPinballUrlLimit ? url : PinballUrl;
+                    PinballSiteInjector.OpenInPreferredBrowser(fallbackUrl);
+                    ShowToast("자동 반영에 실패해 Chrome 우선으로 사이트를 열고 목록을 클립보드에 복사했습니다.");
                 }
             }
             catch (Exception ex)
@@ -2273,7 +2268,7 @@ namespace SoopPinballCollector
 
         public static async Task<bool> OpenAndInjectAsync(string url, string names)
         {
-            foreach (string browserPath in FindBrowserCandidates())
+            foreach (string browserPath in FindPreferredBrowserCandidates())
             {
                 if (await TryOpenAndInjectAsync(browserPath, url, names))
                 {
@@ -2282,6 +2277,31 @@ namespace SoopPinballCollector
             }
 
             return false;
+        }
+
+        public static bool OpenInPreferredBrowser(string url)
+        {
+            foreach (string browserPath in FindPreferredBrowserCandidates())
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(browserPath, "--new-window \"" + url + "\"") { UseShellExecute = false });
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                Process.Start(url);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static async Task<bool> TryOpenAndInjectAsync(string browserPath, string url, string names)
@@ -2322,12 +2342,19 @@ namespace SoopPinballCollector
             return false;
         }
 
-        private static IEnumerable<string> FindBrowserCandidates()
+        private static IEnumerable<string> FindPreferredBrowserCandidates()
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool foundChrome = false;
             foreach (string candidate in ExistingBrowserCandidates(GetChromeCandidates(), seen))
             {
+                foundChrome = true;
                 yield return candidate;
+            }
+
+            if (foundChrome)
+            {
+                yield break;
             }
 
             foreach (string candidate in ExistingBrowserCandidates(GetEdgeCandidates(), seen))

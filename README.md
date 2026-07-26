@@ -62,7 +62,7 @@ TayoPinball.sln
 | 파일 | SHA256 |
 |---|---|
 | `타요의 종겜핀볼.exe` | `E34DBC96B801EB71846F335D29BBDAD912D48EA39817D6ABF0B1BF46FE2646CB` |
-| `타요의 종겜핀볼(자동).exe` | `F1061A7DC8FFE231F560667014F42122254EA897E34B2CB955F6B6EA54CB00B6` |
+| `타요의 종겜핀볼(자동).exe` | `ED7333E044440BC481E4E9CABFE896BE0301F98BD1F8C8C8F7FD207A378C6F9B` |
 
 ## 버전 정보
 
@@ -72,4 +72,4 @@ TayoPinball.sln
 
 ## 보안 메모
 
-`TayoPinballAuto`는 목록이 있을 때 URL 길이와 상관없이 Chrome 우선 자동 반영을 시도합니다. Chrome이 설치되어 있으면 Edge fallback을 사용하지 않으며, Chrome이 없을 때만 Edge를 사용합니다. 이 과정에서 브라우저의 원격 디버깅 포트와 DevTools WebSocket을 사용하므로 일부 보안 엔진이나 VirusTotal ML 판정에서 더 민감하게 보일 수 있습니다.
+`TayoPinballAuto`는 목록이 있을 때 URL 길이와 상관없이 Chrome 우선 자동 반영을 시도합니다. 32비트 실행 환경에서도 64비트 Chrome 설치 경로를 먼저 확인하며, Chrome이 설치되어 있으면 Edge fallback을 사용하지 않습니다. 이 과정에서 브라우저의 원격 디버깅 포트와 DevTools WebSocket을 사용하므로 일부 보안 엔진이나 VirusTotal ML 판정에서 더 민감하게 보일 수 있습니다.

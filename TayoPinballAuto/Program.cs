@@ -2365,6 +2365,9 @@ namespace SoopPinballCollector
 
         private static IEnumerable<string> GetChromeCandidates()
         {
+            yield return Path.Combine(GetProgramFiles64Path(), "Google\\Chrome\\Application\\chrome.exe");
+            yield return Path.Combine(GetProgramFilesPath(), "Google\\Chrome\\Application\\chrome.exe");
+            yield return "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google\\Chrome\\Application\\chrome.exe");
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google\\Chrome\\Application\\chrome.exe");
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google\\Chrome\\Application\\chrome.exe");
@@ -2372,9 +2375,34 @@ namespace SoopPinballCollector
 
         private static IEnumerable<string> GetEdgeCandidates()
         {
+            yield return Path.Combine(GetProgramFiles64Path(), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return Path.Combine(GetProgramFilesPath(), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe";
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft\\Edge\\Application\\msedge.exe");
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft\\Edge\\Application\\msedge.exe");
             yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Edge\\Application\\msedge.exe");
+        }
+
+        private static string GetProgramFiles64Path()
+        {
+            string path = Environment.GetEnvironmentVariable("ProgramW6432");
+            if (!String.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+
+            return "C:\\Program Files";
+        }
+
+        private static string GetProgramFilesPath()
+        {
+            string path = Environment.GetEnvironmentVariable("ProgramFiles");
+            if (!String.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+
+            return Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         }
 
         private static IEnumerable<string> ExistingBrowserCandidates(IEnumerable<string> candidates, HashSet<string> seen)

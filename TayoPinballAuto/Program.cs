@@ -2824,9 +2824,58 @@ namespace SoopPinballCollector
                 return;
             }
 
+            if (serviceCommand == 121)
+            {
+                if (parts.Length > 0)
+                {
+                    HandleChallengeGift(parts[0]);
+                }
+                return;
+            }
+
             if (serviceCommand == 88)
             {
                 RaiseDisconnected("방송이 종료되었습니다.");
+            }
+        }
+
+        private void HandleChallengeGift(string json)
+        {
+            if (String.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            Dictionary<string, object> gift;
+            try
+            {
+                gift = _serializer.DeserializeObject(json) as Dictionary<string, object>;
+            }
+            catch
+            {
+                return;
+            }
+
+            if (gift == null)
+            {
+                return;
+            }
+
+            if (!String.Equals(GetString(gift, "type"), "CHALLENGE_GIFT", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            string nickname = GetString(gift, "user_nick");
+            if (nickname.Length == 0)
+            {
+                nickname = GetString(gift, "user_id");
+            }
+
+            int count = GetInt(gift, "gift_count");
+            if (nickname.Length > 0 && count > 0)
+            {
+                BalloonReceived(nickname, count);
             }
         }
 

@@ -19,12 +19,6 @@
 - 핀볼 사이트 열기
 - 자동 버전의 Chrome 우선 핀볼 사이트 입력 반영
 
-## Challenge Mission
-
-SOOP 도전미션 후원은 채팅 서버에서 `serviceCommand == 121` 패킷으로 들어옵니다.
-
-프로그램은 `type`이 `CHALLENGE_GIFT`인 경우 `user_nick`과 `gift_count`를 읽어서 기존 별풍선 후원과 같은 흐름으로 처리합니다. 즉, 도전미션 제목이 아니라 후원자의 다음 채팅 내용이 핀볼 항목으로 수집됩니다.
-
 ## Build Requirements
 
 - Windows

@@ -328,7 +328,7 @@ namespace SoopPinballCollector
             _surface.Controls.Add(_footerLeft);
 
             _footerRight = new CreditBadge();
-            _footerRight.Text = "견아";
+            _footerRight.Text = "단즈 x 견아";
             _footerRight.Font = UiFont.Make(7.3f, FontStyle.Bold);
             _footerRight.ForeColor = Color.FromArgb(190, 208, 239);
             _footerRight.FillColor = Color.FromArgb(17, 33, 68);
@@ -1089,8 +1089,13 @@ namespace SoopPinballCollector
         private void LayoutFooter(int x, int y, int width)
         {
             int footerY = y;
-            _footerLeft.SetBounds(x, footerY, Math.Max(180, width - 230), 18);
-            int creditW = 48;
+            int creditTextW = TextRenderer.MeasureText(
+                _footerRight.Text,
+                _footerRight.Font,
+                Size.Empty,
+                TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
+            int creditW = Math.Max(48, creditTextW + 27);
+            _footerLeft.SetBounds(x, footerY, Math.Max(180, width - creditW - 16), 18);
             _footerRight.SetBounds(x + width - creditW, footerY + 3, creditW, 18);
             _footerRight.Visible = width >= 560;
         }

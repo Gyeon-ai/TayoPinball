@@ -14,6 +14,7 @@
 - SOOP 라이브 채팅 연결
 - 기준 별풍선 이상 후원자의 다음 채팅 1회 수집
 - 도전미션 후원 패킷(`CHALLENGE_GIFT`) 수집 지원
+- 애드벌룬 후원 패킷(`serviceCommand == 87`) 수집 지원
 - 닉네임 또는 채팅 내용 기준 핀볼 목록 생성
 - 수집 목록 검색, 복사, 저장
 - 핀볼 사이트 열기
@@ -58,8 +59,8 @@ TayoPinball.sln
 
 | File | SHA256 |
 |---|---|
-| `타요의 종겜핀볼.exe` | `F496565080FEFB44ECD02CF0BA5E6CD0A4D59895B3FBF329932E691328543C35` |
-| `타요의 종겜핀볼(자동).exe` | `B5CD0BDAD2AE593DEFE0CE1BD4DAC27E013377F0AB8E0BED50E5FB5376B7F966` |
+| `타요의 종겜핀볼.exe` | `D62655FCA9D77BE15BD68C1481148DE0AD51532A35D5EA81B20D89E6B9DF65CB` |
+| `타요의 종겜핀볼(자동).exe` | `677B7DDE4AD5F8C478A357B6069E4BA2F2FB2CB71123C3AFC071D455DFDAE436` |
 
 ## Version Info
 

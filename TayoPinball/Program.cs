@@ -2530,6 +2530,25 @@ namespace SoopPinballCollector
                 return;
             }
 
+            if (serviceCommand == 87)
+            {
+                if (parts.Length >= 10)
+                {
+                    string nickname = parts[3];
+                    if (nickname.Length == 0)
+                    {
+                        nickname = parts[2];
+                    }
+
+                    int count;
+                    if (nickname.Length > 0 && Int32.TryParse(parts[9], out count) && count > 0)
+                    {
+                        BalloonReceived(nickname, count);
+                    }
+                }
+                return;
+            }
+
             if (serviceCommand == 121)
             {
                 if (parts.Length > 0)

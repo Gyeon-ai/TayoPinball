@@ -328,7 +328,7 @@ namespace SoopPinballCollector
             _surface.Controls.Add(_footerLeft);
 
             _footerRight = new CreditBadge();
-            _footerRight.Text = "단즈 x 견아";
+            _footerRight.Text = "견아";
             _footerRight.Font = UiFont.Make(7.3f, FontStyle.Bold);
             _footerRight.ForeColor = Color.FromArgb(190, 208, 239);
             _footerRight.FillColor = Color.FromArgb(17, 33, 68);

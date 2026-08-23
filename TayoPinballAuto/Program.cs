@@ -106,7 +106,7 @@ namespace SoopPinballCollector
 
     internal sealed class MainForm : Form
     {
-        private const string PinballUrl = "https://lazygyu.github.io/roulette/";
+        private const string PinballUrl = "https://gyeon-ai.github.io/TayoPinball-Web/";
         private const int DirectPinballUrlLimit = 1800;
 
         private readonly Color _text = Color.FromArgb(10, 18, 34);
@@ -2483,7 +2483,7 @@ namespace SoopPinballCollector
                     fallback = wsUrl;
                 }
 
-                if (tabUrl.IndexOf("lazygyu.github.io/roulette", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (tabUrl.IndexOf("gyeon-ai.github.io/TayoPinball-Web", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return wsUrl;
                 }

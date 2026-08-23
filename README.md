@@ -17,7 +17,7 @@
 - 애드벌룬 후원 패킷(`serviceCommand == 87`) 수집 지원
 - 닉네임 또는 채팅 내용 기준 핀볼 목록 생성
 - 수집 목록 검색, 복사, 저장
-- 핀볼 사이트 열기
+- [타요 핀볼](https://gyeon-ai.github.io/TayoPinball-Web/) 사이트 열기
 - 자동 버전의 Chrome 우선 핀볼 사이트 입력 반영
 
 ## Build Requirements
@@ -59,8 +59,8 @@ TayoPinball.sln
 
 | File | SHA256 |
 |---|---|
-| `타요의 종겜핀볼.exe` | `D12BC1391164584CC9EB588393C1FBD8DADE523BA7C060F3F00FFFCFA5E2902A` |
-| `타요의 종겜핀볼(자동).exe` | `A60797CCB85E0AB50B46B3F0C185A1C4510430257387437BC4D3B7A4FA60E590` |
+| `타요의 종겜핀볼.exe` | `092296C131C25CBD3A55AC2103CBE8DE91588EEA222EFD95A28800CA8439CDC6` |
+| `타요의 종겜핀볼(자동).exe` | `8CB879801BE9372E976342380B3DA86BC020F7036A6DCED3A8532A8C43C00050` |
 
 ## Version Info
 

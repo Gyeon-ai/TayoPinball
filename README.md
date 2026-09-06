@@ -2,6 +2,8 @@
 
 타요의 종겜핀볼은 SOOP 라이브 채팅에서 핀볼 추첨에 사용할 목록을 수집하고 관리하는 Windows Forms 프로그램입니다.
 
+**바로 다운로드:** [타요의 종겜핀볼(자동)](https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC%28%EC%9E%90%EB%8F%99%29.exe) / [타요의 종겜핀볼](https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC.exe)
+
 ## Versions
 
 | Project | Release file | Description |

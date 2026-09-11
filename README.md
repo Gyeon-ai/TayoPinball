@@ -8,7 +8,7 @@
 
 | Project | Release file | Description |
 |---|---|---|
-| `TayoPinball` | `타요의 종겜핀볼.exe` | 현재 버전입니다. 기존 UI와 동작을 유지합니다. |
+| `TayoPinball` | `타요의 종겜핀볼.exe` | 새 수집 UI를 사용하며 핀볼 사이트를 일반 방식으로 엽니다. |
 | `TayoPinballAuto` | `타요의 종겜핀볼(자동).exe` | 목록이 있으면 Chrome 우선으로 핀볼 사이트를 열고 입력칸 자동 반영을 시도합니다. |
 
 ## Features
@@ -17,10 +17,13 @@
 - 기준 별풍선 이상 후원자의 다음 채팅 1회 수집
 - 도전미션 후원 패킷(`CHALLENGE_GIFT`) 수집 지원
 - 애드벌룬 후원 패킷(`serviceCommand == 87`) 수집 지원
+- 별풍선, 애드벌룬, 도전미션 수집 대상 선택
+- 정확히 N개 또는 N개 이상 수집 조건 선택
 - 닉네임 또는 채팅 내용 기준 핀볼 목록 생성
 - 수집 목록 검색, 복사, 저장
 - [타요 핀볼](https://gyeon-ai.github.io/TayoPinball-Web/) 사이트 열기
 - 자동 버전의 Chrome 우선 핀볼 사이트 입력 반영
+- 일반판과 자동판에 동일하게 적용된 수집 목록·핀볼 콘솔 UI
 
 ## Build Requirements
 
@@ -61,13 +64,13 @@ TayoPinball.sln
 
 | File | SHA256 |
 |---|---|
-| `타요의 종겜핀볼.exe` | `CBEC3F17A37A75383E48FB27E71F08F51EA014AE650B7F73055333D33F5D63BA` |
-| `타요의 종겜핀볼(자동).exe` | `3C0C4A1A93AB972EA962EC26567B5B73730D9D6184D65608C8BA7396407112A8` |
+| `타요의 종겜핀볼.exe` | `2A44495ED9569784F107DA3D584D11F1BBA7BDEFBD350D154F2D060218C28326` |
+| `타요의 종겜핀볼(자동).exe` | `B07A958487081E0320E58532A8A92FB852B5C5C484D230C75D050BA5782F86D0` |
 
 ## Version Info
 
 - Company: Gyeona
-- Version: 1.4.0.4
+- Version: 1.4.4.2
 - Target framework: .NET Framework 4.8
 
 ## Security Note

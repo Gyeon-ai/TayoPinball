@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Specialized;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -69,7 +70,8 @@ namespace SoopPinballCollector
 
         public static Font Make(float size, FontStyle style)
         {
-            return new Font(FamilyName, size, style, GraphicsUnit.Point);
+            float snappedSize = Math.Max(7f, (float)Math.Round(size * 2f, MidpointRounding.AwayFromZero) / 2f);
+            return new Font(FamilyName, snappedSize, style, GraphicsUnit.Point);
         }
 
         private static string ResolveFamily()
@@ -140,6 +142,9 @@ namespace SoopPinballCollector
         private RoundButton _atLeastButton;
         private Label _thresholdLabel;
         private NumberBox _thresholdInput;
+        private RoundButton _targetButton;
+        private GiftSourcePopup _targetPopup;
+        private PopupDismissMessageFilter _targetPopupDismissFilter;
         private Label _sourceLabel;
         private RoundButton _nicknameSourceButton;
         private RoundButton _contentSourceButton;
@@ -157,7 +162,7 @@ namespace SoopPinballCollector
         private GradientBadge _emptyIcon;
         private Label _emptyTitle;
         private Label _emptyText;
-        private Panel _entryList;
+        private VerticalScrollPanel _entryList;
         private readonly List<CollectedEntry> _visibleEntries = new List<CollectedEntry>();
         private bool _layingOutEntryRows;
         private bool _scrollEntryListToBottomAfterRender;
@@ -181,6 +186,7 @@ namespace SoopPinballCollector
         private readonly System.Windows.Forms.Timer _connectTimer = new System.Windows.Forms.Timer();
         private readonly System.Windows.Forms.Timer _reconnectTimer = new System.Windows.Forms.Timer();
         private readonly System.Windows.Forms.Timer _toastTimer = new System.Windows.Forms.Timer();
+        private readonly System.Windows.Forms.Timer _searchRefreshTimer = new System.Windows.Forms.Timer();
 
         private SoopLiveChatClient _chatClient;
         private string _streamerId = "";
@@ -190,14 +196,17 @@ namespace SoopPinballCollector
         private bool _manualDisconnect;
         private bool _exactMode;
         private bool _nicknamePinballMode;
+        private bool _collectStarBalloon = true;
+        private bool _collectAdBalloon = true;
+        private bool _collectChallengeGift = true;
+        private bool _capturingTargetPopupBackdrop;
         private int _reconnectAttempt;
 
         public MainForm()
         {
             Text = "타요의 종겜핀볼";
-            Width = 1180;
-            Height = 740;
-            MinimumSize = new Size(700, 720);
+            ClientSize = new Size(1093, 688);
+            MinimumSize = new Size(720, 680);
             StartPosition = FormStartPosition.CenterScreen;
             Font = UiFont.Make(9.5f, FontStyle.Regular);
             BackColor = Color.FromArgb(4, 9, 22);
@@ -227,8 +236,10 @@ namespace SoopPinballCollector
             }
             RefreshModeButtons();
             RefreshSourceButtons();
+            RefreshTargetButton();
             RefreshConnectionButton();
             RefreshStatus("● 연결 안 됨", _muted, Color.FromArgb(249, 252, 255));
+            _searchRefreshTimer.Stop();
             RefreshCounts();
 
             Resize += delegate { LayoutUi(); };
@@ -259,6 +270,12 @@ namespace SoopPinballCollector
                 if (IsClearDialogPreviewMode())
                 {
                     ClearEntries();
+                    return;
+                }
+
+                if (IsTargetDialogPreviewMode())
+                {
+                    BeginInvoke((MethodInvoker)delegate { ShowTargetPopup(); });
                     return;
                 }
 
@@ -321,6 +338,7 @@ namespace SoopPinballCollector
             BuildSetupCard();
             BuildCollectionCard();
             BuildPinballCard();
+            BuildTargetPopup();
 
             _footerLeft = PlainLabel("실시간 수집 • 자동 코인 계산 • 핀볼 사이트 연동", 8.0f, FontStyle.Bold, _softMuted);
             _footerLeft.ForeColor = Color.FromArgb(190, 208, 239);
@@ -344,6 +362,13 @@ namespace SoopPinballCollector
             _toast.BringToFront();
 
             WireBlankFocusClearers();
+            FormClosed += delegate
+            {
+                if (_targetPopupDismissFilter != null)
+                {
+                    Application.RemoveMessageFilter(_targetPopupDismissFilter);
+                }
+            };
         }
 
         private void WireBlankFocusClearers()
@@ -409,7 +434,7 @@ namespace SoopPinballCollector
             }
 
             using (stream)
-            using (var icon = new Icon(stream))
+            using (var icon = new Icon(stream, 256, 256))
             {
                 return (Icon)icon.Clone();
             }
@@ -446,6 +471,10 @@ namespace SoopPinballCollector
             _thresholdInput.SuffixText = "개";
             _setupCard.Controls.Add(_thresholdInput);
 
+            _targetButton = SegmentButton("수집 대상 3/3 ▶");
+            _targetButton.Click += delegate { ToggleTargetPopup(); };
+            _setupCard.Controls.Add(_targetButton);
+
             _sourceLabel = SmallHeader("핀볼 반영");
             _setupCard.Controls.Add(_sourceLabel);
 
@@ -460,6 +489,39 @@ namespace SoopPinballCollector
             _setupCard.Controls.Add(_connectButton);
         }
 
+        private void BuildTargetPopup()
+        {
+            _targetPopup = new GiftSourcePopup(
+                _text,
+                _muted,
+                _purple,
+                _line,
+                _collectStarBalloon,
+                _collectAdBalloon,
+                _collectChallengeGift);
+            _targetPopup.Visible = false;
+            _targetPopup.SelectionChanged += delegate
+            {
+                _collectStarBalloon = _targetPopup.CollectStarBalloon;
+                _collectAdBalloon = _targetPopup.CollectAdBalloon;
+                _collectChallengeGift = _targetPopup.CollectChallengeGift;
+                RefreshTargetButton();
+                ShowToast("수집 대상이 변경됐습니다. 이후 수신 패킷부터 적용됩니다.");
+            };
+            _targetPopup.SelectionRejected += delegate
+            {
+                ShowToast("수집 대상은 최소 1개를 선택해야 합니다.");
+            };
+            Controls.Add(_targetPopup);
+            _targetPopup.BringToFront();
+
+            _targetPopupDismissFilter = new PopupDismissMessageFilter(
+                _targetPopup,
+                _targetButton,
+                HideTargetPopup);
+            Application.AddMessageFilter(_targetPopupDismissFilter);
+        }
+
         private void BuildCollectionCard()
         {
             _collectionCard = Card();
@@ -472,22 +534,32 @@ namespace SoopPinballCollector
             _collectionCard.Controls.Add(_collectionTitle);
 
             _searchInput = new RoundTextBox();
-            _searchInput.Placeholder = "닉네임, 내용, 별풍선, 코인 검색";
+            _searchInput.Placeholder = "닉네임, 내용, 후원 종류, 코인 검색";
+            _searchRefreshTimer.Interval = 160;
+            _searchRefreshTimer.Tick += delegate
+            {
+                _searchRefreshTimer.Stop();
+                RefreshCounts();
+            };
             _searchInput.InnerTextChanged += delegate
             {
-                RefreshCounts();
+                _searchRefreshTimer.Stop();
+                _searchRefreshTimer.Start();
             };
             _collectionCard.Controls.Add(_searchInput);
 
             _searchCountLabel = PlainLabel("", 8.2f, FontStyle.Bold, _purple);
             _searchCountLabel.TextAlign = ContentAlignment.MiddleRight;
+            _searchCountLabel.Visible = false;
             _collectionCard.Controls.Add(_searchCountLabel);
 
             _manualTestButton = HeaderActionButton("수동 테스트", true);
+            _manualTestButton.Glyph = ButtonGlyph.Flask;
             _manualTestButton.Click += delegate { AddManualTestEntry(); };
             _collectionCard.Controls.Add(_manualTestButton);
 
             _clearCollectionButton = HeaderActionButton("모두 지우기", false);
+            _clearCollectionButton.Glyph = ButtonGlyph.Trash;
             _clearCollectionButton.Click += delegate { ClearEntries(); };
             _collectionCard.Controls.Add(_clearCollectionButton);
 
@@ -518,8 +590,9 @@ namespace SoopPinballCollector
             _entryList = new VerticalScrollPanel();
             _entryList.Visible = false;
             _entryList.BackColor = _card;
-            _entryList.AutoScroll = true;
             _entryList.Resize += delegate { LayoutEntryRows(); };
+            _entryList.ScrollOffsetChanged += delegate { PositionEntryRows(); };
+            _entryList.MouseDown += delegate { ClearEditingFocus(); };
             _collectionCard.Controls.Add(_entryList);
         }
 
@@ -531,17 +604,19 @@ namespace SoopPinballCollector
             _pinballEyebrow = Eyebrow("PINBALL COIN");
             _pinballCard.Controls.Add(_pinballEyebrow);
 
-            _pinballTitle = PlainLabel("핀볼은 여기로", 13.7f, FontStyle.Bold, _text);
+            _pinballTitle = PlainLabel("핀볼은 여기로", 15.0f, FontStyle.Bold, _text);
+            _pinballTitle.TextAlign = ContentAlignment.MiddleLeft;
             _pinballCard.Controls.Add(_pinballTitle);
 
-            _pinballDesc = PlainLabel(BuildCoinGuideText(), 8.8f, FontStyle.Regular, _muted);
+            _pinballDesc = PlainLabel(BuildCoinGuideText(), 10.0f, FontStyle.Regular, Color.FromArgb(48, 67, 103));
             _pinballDesc.AutoEllipsis = false;
             _pinballCard.Controls.Add(_pinballDesc);
 
-            _pinballInputLabel = PlainLabel("반영된 코인", 8.6f, FontStyle.Bold, _text);
+            _pinballInputLabel = PlainLabel("반영된 코인", 9.5f, FontStyle.Bold, _text);
+            _pinballInputLabel.TextAlign = ContentAlignment.MiddleLeft;
             _pinballCard.Controls.Add(_pinballInputLabel);
 
-            _pinballCountLabel = PlainLabel("0개", 8.5f, FontStyle.Bold, _purple);
+            _pinballCountLabel = PlainLabel("0개", 9.5f, FontStyle.Bold, _purple);
             _pinballCountLabel.TextAlign = ContentAlignment.MiddleRight;
             _pinballCard.Controls.Add(_pinballCountLabel);
 
@@ -650,15 +725,15 @@ namespace SoopPinballCollector
             _surface.SuspendLayout();
 
             int viewportWidth = Math.Max(320, _surface.Width);
-            int margin = viewportWidth < 520 ? 6 : 16;
-            int rightMargin = margin;
-            int contentWidth = Math.Max(300, viewportWidth - margin - rightMargin);
-            bool stackedLayout = contentWidth < 860;
+            int viewportHeight = Math.Max(320, _surface.ClientSize.Height);
+            int margin = viewportWidth < 520 ? 8 : 18;
+            int contentWidth = Math.Max(300, viewportWidth - (margin * 2));
+            bool stackedLayout = contentWidth < 920;
             int previousSurfaceScrollY = stackedLayout ? Math.Max(0, -_surface.AutoScrollPosition.Y) : 0;
             _surface.AutoScrollPosition = Point.Empty;
             if (stackedLayout)
             {
-                contentWidth = Math.Max(300, viewportWidth - margin - rightMargin - SystemInformation.VerticalScrollBarWidth);
+                contentWidth = Math.Max(300, viewportWidth - (margin * 2) - SystemInformation.VerticalScrollBarWidth);
                 _surface.AutoScroll = true;
             }
             else
@@ -667,44 +742,34 @@ namespace SoopPinballCollector
                 _surface.AutoScrollMinSize = Size.Empty;
                 _surface.AutoScroll = false;
             }
-            int y = viewportWidth < 520 ? 12 : 18;
+            int y = viewportWidth < 520 ? 10 : 16;
 
             LayoutHeader(margin, y, contentWidth);
             LayoutToast(margin, y, contentWidth);
-            y += viewportWidth < 520 ? 76 : 64;
-
-            int setupHeight = LayoutSetupCard(margin, y, contentWidth);
-            y += setupHeight + 14;
+            y += viewportWidth < 520 ? 78 : 76;
 
             if (!stackedLayout)
             {
                 int gap = 14;
-                int bodyX = margin;
-                int leftWidth;
-                int rightWidth;
+                int leftWidth = Math.Min(350, Math.Max(300, contentWidth / 4));
+                int rightWidth = contentWidth - leftWidth - gap;
+                int footerReserve = 28;
+                int pinballHeight = 160;
+                int upperHeight = Math.Max(360, viewportHeight - y - pinballHeight - gap - footerReserve);
 
-                if (contentWidth >= 1500)
-                {
-                    leftWidth = (contentWidth - gap) / 2;
-                    rightWidth = contentWidth - leftWidth - gap;
-                }
-                else
-                {
-                    int minRightWidth = 330;
-                    int maxLeftWidth = 690;
-                    leftWidth = Math.Min(maxLeftWidth, Math.Max(520, contentWidth - minRightWidth - gap));
-                    rightWidth = contentWidth - leftWidth - gap;
-                }
-
-                int bodyHeight = Math.Max(400, _surface.ClientSize.Height - y - 26);
-                LayoutCollectionCard(bodyX, y, leftWidth, bodyHeight);
-                LayoutPinballCard(bodyX + leftWidth + gap, y, rightWidth, bodyHeight);
-                y += bodyHeight + 1;
+                LayoutSetupCard(margin, y, leftWidth, upperHeight);
+                LayoutCollectionCard(margin + leftWidth + gap, y, rightWidth, upperHeight);
+                y += upperHeight + gap;
+                LayoutPinballCard(margin, y, contentWidth, pinballHeight);
+                y += pinballHeight + 2;
             }
             else
             {
-                int collectionHeight = contentWidth < 520 ? 400 : 410;
-                int pinballHeight = contentWidth < 520 ? 430 : 410;
+                int setupHeight = 390;
+                int collectionHeight = contentWidth < 520 ? 420 : 430;
+                int pinballHeight = contentWidth < 520 ? 362 : 300;
+                LayoutSetupCard(margin, y, contentWidth, setupHeight);
+                y += setupHeight + 12;
                 LayoutCollectionCard(margin, y, contentWidth, collectionHeight);
                 y += collectionHeight + 12;
                 LayoutPinballCard(margin, y, contentWidth, pinballHeight);
@@ -712,7 +777,8 @@ namespace SoopPinballCollector
             }
 
             LayoutFooter(margin, y, contentWidth);
-            y += stackedLayout ? 34 : 18;
+            LayoutTargetPopup();
+            y += stackedLayout ? 34 : 20;
 
             int scrollContentHeight = y + (stackedLayout ? 10 : 2);
             _surface.AutoScrollMinSize = stackedLayout ? new Size(0, scrollContentHeight) : Size.Empty;
@@ -738,8 +804,10 @@ namespace SoopPinballCollector
 
             int measured = TextRenderer.MeasureText(_toast.Text, _toast.Font).Width + 92;
             int available = Math.Max(220, width - 48);
-            int toastWidth = Math.Min(available, Math.Min(380, Math.Max(320, measured)));
-            _toast.SetBounds(x + ((width - toastWidth) / 2), y + 5, toastWidth, 38);
+            int toastWidth = Math.Min(available, Math.Max(320, measured));
+            int toastX = x + ((width - toastWidth) / 2);
+
+            _toast.SetBounds(toastX, y + 5, toastWidth, 38);
             if (_toast.Visible)
             {
                 _toast.BringToFront();
@@ -753,121 +821,107 @@ namespace SoopPinballCollector
             int statusWidth = Math.Min(Math.Max(width < 460 ? 112 : 132, measuredStatus), maxStatus);
             int titleWidth = Math.Max(120, width - statusWidth - 76);
 
-            _logo.SetBounds(x, y + 2, 42, 42);
-            _appTitle.SetBounds(x + 52, y - 2, titleWidth + 2, 34);
-            _appSubtitle.SetBounds(x + 54, y + 30, titleWidth, 22);
+            _logo.SetBounds(x, y, 56, 56);
+            _appTitle.SetBounds(x + 70, y + 1, titleWidth - 18, 34);
+            _appSubtitle.SetBounds(x + 72, y + 34, titleWidth - 18, 22);
             _appSubtitle.Visible = width >= 420;
 
-            _statusPill.SetBounds(x + width - statusWidth, y + 8, statusWidth, 32);
+            _statusPill.SetBounds(x + width - statusWidth, y + 12, statusWidth, 34);
         }
 
-        private int LayoutSetupCard(int x, int y, int width)
+        private void LayoutSetupCard(int x, int y, int width, int height)
         {
-            if (width >= 1040)
-            {
-                int height = 86;
-                _setupCard.SetBounds(x, y, width, height);
-                int innerY = 14;
-                int inputX = 24;
-                int buttonArea = 140;
-                int buttonX = width - buttonArea;
-                int thresholdX = buttonX - 116;
-                int sourceX = thresholdX - 212;
-                int conditionX = sourceX - 202;
-                int inputW = Math.Max(240, conditionX - inputX - 18);
-
-                _streamLabel.SetBounds(inputX, innerY, inputW, 18);
-                _streamInput.SetBounds(inputX, 38, inputW, 34);
-                _conditionLabel.SetBounds(conditionX, innerY, 160, 18);
-                _exactButton.SetBounds(conditionX, 38, 88, 34);
-                _atLeastButton.SetBounds(conditionX + 94, 38, 84, 34);
-                _sourceLabel.SetBounds(sourceX, innerY, 160, 18);
-                _nicknameSourceButton.SetBounds(sourceX, 38, 84, 34);
-                _contentSourceButton.SetBounds(sourceX + 92, 38, 96, 34);
-                _thresholdLabel.SetBounds(thresholdX, innerY, 110, 18);
-                _thresholdInput.SetBounds(thresholdX, 38, 92, 34);
-                _connectButton.SetBounds(buttonX, innerY, 120, 58);
-                return height;
-            }
-
-            if (width >= 760)
-            {
-                int height = 156;
-                _setupCard.SetBounds(x, y, width, height);
-
-                int mediumPad = 18;
-                int streamW = width - (mediumPad * 2);
-                int labelY = 84;
-                int controlY = 108;
-                int connectW = 120;
-                int connectH = 58;
-                int connectX = width - mediumPad - connectW;
-                int conditionX = mediumPad;
-                int conditionW = 202;
-                int sourceW = 202;
-                int thresholdW = 100;
-                int groupGap = 26;
-                int sourceX = conditionX + conditionW + groupGap;
-                int thresholdX = sourceX + sourceW + groupGap;
-                if (thresholdX + thresholdW + 24 > connectX)
-                {
-                    groupGap = Math.Max(14, (connectX - conditionX - conditionW - sourceW - thresholdW - 24) / 2);
-                    sourceX = conditionX + conditionW + groupGap;
-                    thresholdX = sourceX + sourceW + groupGap;
-                }
-
-                _streamLabel.SetBounds(mediumPad, 16, streamW, 18);
-                _streamInput.SetBounds(mediumPad, 40, streamW, 34);
-                _conditionLabel.SetBounds(conditionX, labelY, 160, 18);
-                _exactButton.SetBounds(conditionX, controlY, 98, 34);
-                _atLeastButton.SetBounds(conditionX + 104, controlY, 92, 34);
-                _sourceLabel.SetBounds(sourceX, labelY, 160, 18);
-                _nicknameSourceButton.SetBounds(sourceX, controlY, 90, 34);
-                _contentSourceButton.SetBounds(sourceX + 96, controlY, 106, 34);
-                _thresholdLabel.SetBounds(thresholdX, labelY, 110, 18);
-                _thresholdInput.SetBounds(thresholdX, controlY, thresholdW, 34);
-                _connectButton.SetBounds(connectX, labelY, connectW, connectH);
-                return height;
-            }
-
-            if (width >= 560)
-            {
-                int height = 228;
-                int rightColumnX = width - 140;
-                int thresholdX = rightColumnX + 10;
-                _setupCard.SetBounds(x, y, width, height);
-                _streamLabel.SetBounds(18, 16, width - 38, 18);
-                _streamInput.SetBounds(18, 40, width - 38, 34);
-                _conditionLabel.SetBounds(18, 84, 160, 18);
-                _exactButton.SetBounds(18, 108, 98, 34);
-                _atLeastButton.SetBounds(122, 108, 92, 34);
-                _sourceLabel.SetBounds(258, 84, 160, 18);
-                _nicknameSourceButton.SetBounds(258, 108, 90, 34);
-                _contentSourceButton.SetBounds(354, 108, 106, 34);
-                _thresholdLabel.SetBounds(thresholdX, 84, 110, 18);
-                _thresholdInput.SetBounds(thresholdX, 108, 100, 34);
-                _connectButton.SetBounds(rightColumnX, 154, 120, 58);
-                return height;
-            }
-
-            int narrowHeight = 350;
-            _setupCard.SetBounds(x, y, width, narrowHeight);
-            int pad = 14;
+            _setupCard.SetBounds(x, y, width, height);
+            int pad = width < 420 ? 16 : 20;
             int fieldW = width - (pad * 2);
             int halfW = (fieldW - 8) / 2;
 
-            _streamLabel.SetBounds(pad, 14, fieldW, 18);
-            _streamInput.SetBounds(pad, 46, fieldW, 34);
-            _conditionLabel.SetBounds(pad, 90, fieldW, 18);
-            _exactButton.SetBounds(pad, 114, halfW, 34);
-            _atLeastButton.SetBounds(pad + halfW + 8, 114, halfW, 34);
-            _sourceLabel.SetBounds(pad, 158, fieldW, 18);
-            _nicknameSourceButton.SetBounds(pad, 182, halfW, 34);
-            _contentSourceButton.SetBounds(pad + halfW + 8, 182, halfW, 34);
-            _thresholdLabel.SetBounds(pad, 226, fieldW, 18);
-            _thresholdInput.SetBounds(pad, 250, fieldW, 34);
-            _connectButton.SetBounds(pad, 294, fieldW, 42);
-            return narrowHeight;
+            _streamLabel.SetBounds(pad, 18, fieldW, 18);
+            _streamInput.SetBounds(pad, 42, fieldW, 36);
+            _connectButton.SetBounds(pad, 88, fieldW, 44);
+
+            const int sectionGap = 18;
+            const int labelToControlGap = 6;
+            int thresholdLabelY = _connectButton.Bottom + sectionGap;
+            int thresholdControlsY = thresholdLabelY + 18 + labelToControlGap;
+            _thresholdLabel.SetBounds(pad, thresholdLabelY, fieldW, 18);
+            _thresholdInput.SetBounds(pad, thresholdControlsY, halfW, 36);
+            _targetButton.SetBounds(pad + halfW + 8, thresholdControlsY, halfW, 36);
+
+            int conditionLabelY = thresholdControlsY + 36 + sectionGap;
+            int conditionControlsY = conditionLabelY + 18 + labelToControlGap;
+            _conditionLabel.SetBounds(pad, conditionLabelY, fieldW, 18);
+            _exactButton.SetBounds(pad, conditionControlsY, halfW, 36);
+            _atLeastButton.SetBounds(pad + halfW + 8, conditionControlsY, halfW, 36);
+
+            int sourceLabelY = conditionControlsY + 36 + sectionGap;
+            int sourceControlsY = sourceLabelY + 18 + labelToControlGap;
+            _sourceLabel.SetBounds(pad, sourceLabelY, fieldW, 18);
+            _nicknameSourceButton.SetBounds(pad, sourceControlsY, halfW, 36);
+            _contentSourceButton.SetBounds(pad + halfW + 8, sourceControlsY, halfW, 36);
+        }
+
+        private void LayoutTargetPopup()
+        {
+            if (_targetPopup == null || _targetButton == null || _setupCard == null)
+            {
+                return;
+            }
+
+            Point anchor = PointToClient(_targetButton.PointToScreen(Point.Empty));
+            Point setupRight = PointToClient(_setupCard.PointToScreen(new Point(_setupCard.Width, 0)));
+            int popupX = setupRight.X + 2;
+            int popupY = anchor.Y;
+            if (popupX + _targetPopup.Width > ClientSize.Width - 12)
+            {
+                popupX = Math.Max(12, anchor.X + _targetButton.Width - _targetPopup.Width);
+                popupY = anchor.Y + _targetButton.Height + 6;
+            }
+            if (popupY + _targetPopup.Height > ClientSize.Height - 12)
+            {
+                popupY = Math.Max(12, anchor.Y - _targetPopup.Height - 6);
+            }
+
+            _targetPopup.Location = new Point(popupX, popupY);
+            if (_targetPopup.Visible)
+            {
+                RefreshTargetPopupBackdrop();
+                _targetPopup.BringToFront();
+            }
+        }
+
+        private void RefreshTargetPopupBackdrop()
+        {
+            if (_capturingTargetPopupBackdrop || _targetPopup == null || _surface == null ||
+                _surface.Width <= 0 || _surface.Height <= 0)
+            {
+                return;
+            }
+
+            _capturingTargetPopupBackdrop = true;
+            try
+            {
+                using (var surfaceBitmap = new Bitmap(_surface.Width, _surface.Height, PixelFormat.Format32bppPArgb))
+                using (var backdrop = new Bitmap(_targetPopup.Width, _targetPopup.Height, PixelFormat.Format32bppPArgb))
+                {
+                    _surface.DrawToBitmap(surfaceBitmap, _surface.ClientRectangle);
+                    Point popupOnSurface = _surface.PointToClient(PointToScreen(_targetPopup.Location));
+                    using (Graphics graphics = Graphics.FromImage(backdrop))
+                    {
+                        graphics.CompositingMode = CompositingMode.SourceCopy;
+                        graphics.DrawImage(
+                            surfaceBitmap,
+                            new Rectangle(Point.Empty, backdrop.Size),
+                            new Rectangle(popupOnSurface, backdrop.Size),
+                            GraphicsUnit.Pixel);
+                    }
+                    _targetPopup.SetBackdropImage(backdrop);
+                }
+            }
+            finally
+            {
+                _capturingTargetPopupBackdrop = false;
+            }
         }
 
         private void LayoutCollectionCard(int x, int y, int width, int height)
@@ -877,7 +931,22 @@ namespace SoopPinballCollector
 
             _collectionEyebrow.SetBounds(pad, 20, 180, 18);
 
-            if (width >= 520)
+            if (width >= 720)
+            {
+                int actionsW = 224;
+                int actionsX = width - pad - actionsW;
+                int titleW = Math.Min(250, Math.Max(180, width / 4));
+                int searchX = pad + titleW + 10;
+                int searchW = Math.Max(190, actionsX - searchX - 14);
+                int headerDividerY = 82;
+                _collectionTitle.SetBounds(pad - 2, 40, titleW, 28);
+                _searchInput.SetBounds(searchX, 28, searchW, 36);
+                _searchCountLabel.SetBounds(searchX + searchW - 62, 66, 62, 16);
+                _manualTestButton.SetBounds(actionsX, 28, 108, 36);
+                _clearCollectionButton.SetBounds(actionsX + 116, 28, 108, 36);
+                _collectionDivider.SetBounds(pad, headerDividerY, width - (pad * 2), 1);
+            }
+            else if (width >= 520)
             {
                 int actionsX = width - pad - 234;
                 int headerDividerY = 116;
@@ -886,9 +955,7 @@ namespace SoopPinballCollector
                 _manualTestButton.SetBounds(actionsX, actionY, 112, 34);
                 _clearCollectionButton.SetBounds(actionsX + 126, actionY, 108, 34);
                 int searchY = 78;
-                int countW = 64;
-                _searchInput.SetBounds(pad, searchY, Math.Max(180, width - (pad * 2) - countW - 10), 32);
-                _searchCountLabel.SetBounds(width - pad - countW, searchY + 5, countW, 20);
+                _searchInput.SetBounds(pad, searchY, Math.Max(180, width - (pad * 2)), 32);
                 _collectionDivider.SetBounds(pad, headerDividerY, width - (pad * 2), 1);
             }
             else if (width >= 430)
@@ -898,9 +965,7 @@ namespace SoopPinballCollector
                 _manualTestButton.SetBounds(actionsX, 66, 112, 34);
                 _clearCollectionButton.SetBounds(actionsX + 126, 66, 108, 34);
                 int searchY = 112;
-                int countW = 62;
-                _searchInput.SetBounds(pad, searchY, Math.Max(150, width - (pad * 2) - countW - 8), 32);
-                _searchCountLabel.SetBounds(width - pad - countW, searchY + 5, countW, 20);
+                _searchInput.SetBounds(pad, searchY, Math.Max(150, width - (pad * 2)), 32);
                 _collectionDivider.SetBounds(pad, 150, width - (pad * 2), 1);
             }
             else
@@ -910,15 +975,15 @@ namespace SoopPinballCollector
                 _clearCollectionButton.SetBounds(pad + 126, 78, Math.Min(108, width - (pad * 2) - 126), 34);
                 int searchY = 124;
                 _searchInput.SetBounds(pad, searchY, width - (pad * 2), 32);
-                _searchCountLabel.SetBounds(pad, searchY + 34, width - (pad * 2), 18);
-                _collectionDivider.SetBounds(pad, 178, width - (pad * 2), 1);
+                _collectionDivider.SetBounds(pad, 164, width - (pad * 2), 1);
             }
 
             int dividerY = _collectionDivider.Top;
             int bodyY = dividerY + (_visibleEntries.Count > 0 ? 1 : 14);
-            int bodyH = Math.Max(180, height - bodyY - 22);
-            _emptyState.SetBounds(pad, bodyY, width - (pad * 2), bodyH);
-            _entryList.SetBounds(pad, bodyY, width - (pad * 2), bodyH);
+            int availableBodyH = Math.Max(180, height - bodyY - 22);
+            int listHeight = Math.Max(EntryRowControl.RowHeight, (availableBodyH / EntryRowControl.RowHeight) * EntryRowControl.RowHeight);
+            _emptyState.SetBounds(pad, bodyY, width - (pad * 2), availableBodyH);
+            _entryList.SetBounds(pad, bodyY, width - (pad * 2), listHeight);
             LayoutEmptyState();
             LayoutEntryRows();
         }
@@ -945,54 +1010,56 @@ namespace SoopPinballCollector
                 return;
             }
 
+            const int rowPoolCapacity = 9;
+            int requiredRows = Math.Min(_visibleEntries.Count, rowPoolCapacity);
+
             _entryList.SuspendLayout();
-            while (_entryList.Controls.Count > _visibleEntries.Count)
+            while (_entryList.Controls.Count > requiredRows)
             {
                 Control last = _entryList.Controls[_entryList.Controls.Count - 1];
                 _entryList.Controls.RemoveAt(_entryList.Controls.Count - 1);
                 last.Dispose();
             }
 
-            for (int i = 0; i < _visibleEntries.Count; i++)
+            while (_entryList.Controls.Count < requiredRows)
             {
-                CollectedEntry entry = _visibleEntries[i];
-                EntryRowControl row = i < _entryList.Controls.Count ? _entryList.Controls[i] as EntryRowControl : null;
-                if (row == null || row.Entry != entry)
+                int index = _entryList.Controls.Count;
+                EntryRowControl row = new EntryRowControl(
+                    _visibleEntries[index],
+                    index + 1,
+                    _text,
+                    _muted,
+                    _purple,
+                    _lavender,
+                    _line,
+                    _card);
+                row.EntryChanged += delegate { RefreshPinballText(false); };
+                row.BlankClicked += delegate { ClearEditingFocus(); };
+                AttachEntryScrollWheel(row);
+                EntryRowControl rowForEvent = row;
+                row.DeleteClicked += delegate
                 {
-                    row = new EntryRowControl(entry, i + 1, _text, _muted, _purple, _lavender, _line, _card);
-                    row.EntryChanged += delegate { RefreshPinballText(false); };
-                    row.BlankClicked += delegate { ClearEditingFocus(); };
-                    EntryRowControl rowForEvent = row;
-                    row.DeleteClicked += delegate
+                    int entryIndex = _entries.IndexOf(rowForEvent.Entry);
+                    if (entryIndex >= 0)
                     {
-                        int index = _entries.IndexOf(rowForEvent.Entry);
-                        if (index >= 0)
-                        {
-                            _entries.RemoveAt(index);
-                            RefreshPinballText(false);
-                            RefreshCounts();
-                        }
-                    };
-
-                    if (i < _entryList.Controls.Count)
-                    {
-                        Control old = _entryList.Controls[i];
-                        _entryList.Controls.RemoveAt(i);
-                        old.Dispose();
-                        _entryList.Controls.Add(row);
-                        _entryList.Controls.SetChildIndex(row, i);
+                        _entries.RemoveAt(entryIndex);
+                        RefreshPinballText(false);
+                        RefreshCounts();
                     }
-                    else
-                    {
-                        _entryList.Controls.Add(row);
-                    }
-                }
-
-                row.SetIndex(i + 1);
-                row.RefreshEntryValues();
+                };
+                _entryList.Controls.Add(row);
             }
 
-            _entryList.ResumeLayout();
+            foreach (Control control in _entryList.Controls)
+            {
+                EntryRowControl row = control as EntryRowControl;
+                if (row != null)
+                {
+                    row.RefreshEntryValues();
+                }
+            }
+
+            _entryList.ResumeLayout(false);
             LayoutEntryRows();
         }
 
@@ -1008,26 +1075,19 @@ namespace SoopPinballCollector
             try
             {
                 int totalHeight = _visibleEntries.Count * EntryRowControl.RowHeight;
-                int previousScrollY = Math.Max(0, -_entryList.AutoScrollPosition.Y);
+                int previousScrollY = _entryList.ScrollOffset;
+                _entryList.SetContentHeight(totalHeight);
 
-                _entryList.AutoScrollPosition = Point.Empty;
-                _entryList.AutoScrollMinSize = new Size(0, totalHeight);
-
-                int rowWidth = Math.Max(240, _entryList.ClientSize.Width - 2);
-                int y = 0;
-
-                foreach (Control control in _entryList.Controls)
+                if (_scrollEntryListToBottomAfterRender)
                 {
-                    control.SetBounds(0, y, rowWidth, EntryRowControl.RowHeight);
-                    y += EntryRowControl.RowHeight;
+                    _entryList.ScrollToBottom();
+                }
+                else
+                {
+                    _entryList.ScrollTo(previousScrollY);
                 }
 
-                int maxScrollY = Math.Max(0, totalHeight - _entryList.ClientSize.Height);
-                int restoreScrollY = _scrollEntryListToBottomAfterRender ? maxScrollY : Math.Min(previousScrollY, maxScrollY);
-                if (restoreScrollY > 0)
-                {
-                    _entryList.AutoScrollPosition = new Point(0, restoreScrollY);
-                }
+                PositionEntryRows();
             }
             finally
             {
@@ -1039,24 +1099,114 @@ namespace SoopPinballCollector
                 {
                     ScrollEntryListToBottom();
                 }
+                _entryList.Invalidate();
+            }
+        }
+
+        private void PositionEntryRows()
+        {
+            if (_entryList == null)
+            {
+                return;
+            }
+
+            int rowHeight = EntryRowControl.RowHeight;
+            int offset = _entryList.ScrollOffset;
+            int firstVisible = Math.Max(0, offset / rowHeight);
+            int lastVisible = Math.Min(
+                _visibleEntries.Count - 1,
+                Math.Max(firstVisible, (offset + Math.Max(1, _entryList.ClientSize.Height) - 1) / rowHeight));
+            int rowWidth = Math.Max(240, _entryList.ContentWidth - 2);
+            var availableRows = new List<EntryRowControl>();
+            foreach (Control control in _entryList.Controls)
+            {
+                EntryRowControl row = control as EntryRowControl;
+                if (row != null)
+                {
+                    availableRows.Add(row);
+                }
+            }
+
+            _entryList.SuspendLayout();
+            try
+            {
+                for (int entryIndex = firstVisible; entryIndex <= lastVisible; entryIndex++)
+                {
+                    CollectedEntry entry = _visibleEntries[entryIndex];
+                    EntryRowControl row = null;
+                    for (int i = 0; i < availableRows.Count; i++)
+                    {
+                        if (Object.ReferenceEquals(availableRows[i].Entry, entry))
+                        {
+                            row = availableRows[i];
+                            availableRows.RemoveAt(i);
+                            break;
+                        }
+                    }
+
+                    if (row == null && availableRows.Count > 0)
+                    {
+                        row = availableRows[0];
+                        availableRows.RemoveAt(0);
+                    }
+                    if (row == null)
+                    {
+                        continue;
+                    }
+
+                    row.SetEntry(entry, entryIndex + 1);
+                    Rectangle bounds = new Rectangle(0, (entryIndex * rowHeight) - offset, rowWidth, rowHeight);
+                    if (row.Bounds != bounds)
+                    {
+                        row.Bounds = bounds;
+                    }
+                    if (!row.Visible)
+                    {
+                        row.Visible = true;
+                    }
+                }
+
+                foreach (EntryRowControl row in availableRows)
+                {
+                    if (row.Visible)
+                    {
+                        row.Visible = false;
+                    }
+                }
+            }
+            finally
+            {
+                _entryList.ResumeLayout(false);
             }
         }
 
         private void ScrollEntryListToBottom()
         {
-            if (_entryList == null || !_entryList.IsHandleCreated)
+            if (_entryList == null)
             {
                 return;
             }
 
-            _entryList.AutoScrollPosition = new Point(0, Math.Max(0, _entryList.AutoScrollMinSize.Height));
-            _entryList.BeginInvoke((MethodInvoker)delegate
+            _entryList.ScrollToBottom();
+        }
+
+        private void AttachEntryScrollWheel(Control control)
+        {
+            if (control == null)
             {
-                if (_entryList != null && !_entryList.IsDisposed)
-                {
-                    _entryList.AutoScrollPosition = new Point(0, Math.Max(0, _entryList.AutoScrollMinSize.Height));
-                }
-            });
+                return;
+            }
+
+            control.MouseWheel += delegate(object sender, MouseEventArgs e)
+            {
+                ClearEditingFocus();
+                _entryList.ScrollByWheel(e.Delta);
+            };
+
+            foreach (Control child in control.Controls)
+            {
+                AttachEntryScrollWheel(child);
+            }
         }
 
         private void LayoutPinballCard(int x, int y, int width, int height)
@@ -1064,15 +1214,43 @@ namespace SoopPinballCollector
             _pinballCard.SetBounds(x, y, width, height);
             int pad = width < 420 ? 16 : 24;
 
-            _pinballEyebrow.SetBounds(pad, 22, 180, 18);
-            _pinballTitle.SetBounds(pad - 2, 46, width - (pad * 2) + 2, 30);
-            _pinballDesc.SetBounds(pad, 80, width - (pad * 2), 70);
-            int totalLabelW = width < 380 ? 88 : 116;
-            _pinballInputLabel.SetBounds(pad, 160, Math.Max(120, width - (pad * 2) - totalLabelW - 8), 20);
-            _pinballCountLabel.SetBounds(width - pad - totalLabelW, 160, totalLabelW, 20);
+            if (width >= 900)
+            {
+                int actionsW = Math.Min(286, Math.Max(250, width / 4));
+                const int smallButtonGap = 10;
+                if (((actionsW - smallButtonGap) & 1) != 0)
+                {
+                    actionsW--;
+                }
 
-            int textY = 184;
-            int textHeight = Math.Max(88, height - 328);
+                int centerX = (int)Math.Round(width * 0.20);
+                int leftW = centerX - pad - 12;
+                int centerW = Math.Max(280, width - centerX - actionsW - pad - 14);
+                int actionsX = width - pad - actionsW;
+
+                _pinballEyebrow.SetBounds(pad, 14, leftW, 20);
+                _pinballTitle.SetBounds(pad - 2, 35, leftW + 2, 31);
+                _pinballDesc.SetBounds(pad, 68, leftW, 44);
+                _pinballInputLabel.SetBounds(centerX + 13, 14, centerW - 105, 20);
+                _pinballCountLabel.SetBounds(centerX + centerW - 92, 14, 92, 20);
+                _pinballText.SetBounds(centerX, 38, centerW, 108);
+                _openPinballButton.SetBounds(actionsX, 14, actionsW, 66);
+                int wideSmallW = (actionsW - smallButtonGap) / 2;
+                int actionSmallY = 90;
+                _copyButton.SetBounds(actionsX, actionSmallY, wideSmallW, 56);
+                _saveButton.SetBounds(actionsX + wideSmallW + smallButtonGap, actionSmallY, wideSmallW, 56);
+                return;
+            }
+
+            _pinballEyebrow.SetBounds(pad, 22, 180, 18);
+            _pinballTitle.SetBounds(pad - 2, 46, width - (pad * 2) + 2, 32);
+            _pinballDesc.SetBounds(pad, 80, width - (pad * 2), 50);
+            int totalLabelW = width < 380 ? 88 : 116;
+            _pinballInputLabel.SetBounds(pad, 138, Math.Max(120, width - (pad * 2) - totalLabelW - 8), 20);
+            _pinballCountLabel.SetBounds(width - pad - totalLabelW, 138, totalLabelW, 20);
+
+            int textY = 162;
+            int textHeight = Math.Max(82, height - 304);
             _pinballText.SetBounds(pad, textY, width - (pad * 2), textHeight);
 
             int buttonY = textY + textHeight + 18;
@@ -1105,7 +1283,10 @@ namespace SoopPinballCollector
             string raw = _streamInput.Text.Trim();
             if (raw.Length == 0)
             {
-                MessageBox.Show("SOOP 방송 주소 또는 SOOP ID를 입력해 주세요.", "입력 필요", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                using (var dialog = new InputRequiredDialog(Font, _text, _muted, _purple, _line))
+                {
+                    dialog.ShowDialog(this);
+                }
                 return;
             }
 
@@ -1215,13 +1396,13 @@ namespace SoopPinballCollector
                 });
             };
 
-            client.BalloonReceived += delegate(string nickname, int count)
+            client.BalloonReceived += delegate(GiftSource source, string nickname, int count)
             {
                 RunOnUiThread(delegate
                 {
                     if (_chatClient == client)
                     {
-                        HandleBalloonGift(nickname, count);
+                        HandleBalloonGift(source, nickname, count);
                     }
                 });
             };
@@ -1295,6 +1476,7 @@ namespace SoopPinballCollector
         private void AddManualTestEntry()
         {
             var entry = new CollectedEntry();
+            entry.Source = GiftSource.StarBalloon;
             entry.Nickname = "테스트";
             entry.BalloonCount = _thresholdInput.Value;
             entry.CoinCount = CalculateCoins(entry.BalloonCount);
@@ -1304,8 +1486,13 @@ namespace SoopPinballCollector
             ShowToast("수동 테스트 1건을 추가했습니다.");
         }
 
-        private void HandleBalloonGift(string nickname, int count)
+        private void HandleBalloonGift(GiftSource source, string nickname, int count)
         {
+            if (!IsGiftSourceEnabled(source))
+            {
+                return;
+            }
+
             if (nickname.Length == 0)
             {
                 nickname = "익명";
@@ -1318,6 +1505,7 @@ namespace SoopPinballCollector
             }
 
             var gift = new PendingGift();
+            gift.Source = source;
             gift.Nickname = nickname;
             gift.BalloonCount = count;
             gift.CoinCount = CalculateCoins(count);
@@ -1356,6 +1544,7 @@ namespace SoopPinballCollector
             }
 
             var entry = new CollectedEntry();
+            entry.Source = matched.Source;
             entry.Nickname = matched.Nickname;
             entry.BalloonCount = matched.BalloonCount;
             entry.CoinCount = matched.CoinCount;
@@ -1505,6 +1694,7 @@ namespace SoopPinballCollector
             {
                 _searchCountLabel.Text = _entries.Count > 0 ? _entries.Count + "개" : "";
             }
+            _searchCountLabel.Visible = false;
             RefreshEmptyStateText(searchActive);
             RenderEntryRows();
             if (visibilityChanged && _surface != null && _surface.IsHandleCreated)
@@ -1617,9 +1807,9 @@ namespace SoopPinballCollector
 
             return ContainsSearch(entry.Nickname, query) ||
                    ContainsSearch(entry.PinballName, query) ||
+                   ContainsSearch(GiftSourceInfo.GetLabel(entry.Source), query) ||
                    ContainsSearch(entry.BalloonCount.ToString(), query) ||
-                   ContainsSearch(entry.CoinCount.ToString() + "코인", query) ||
-                   ContainsSearch(entry.ReceivedAt, query);
+                   ContainsSearch(entry.CoinCount.ToString() + "코인", query);
         }
 
         private static bool ContainsSearch(string value, string query)
@@ -1632,7 +1822,7 @@ namespace SoopPinballCollector
             if (searchActive && _entries.Count > 0)
             {
                 _emptyTitle.Text = "검색 결과가 없어요";
-                _emptyText.Text = "닉네임, 핀볼 내용, 별풍선, 코인 기준으로\r\n다시 검색해 보세요.";
+                _emptyText.Text = "닉네임, 핀볼 내용, 후원 종류, 코인 기준으로\r\n다시 검색해 보세요.";
                 return;
             }
 
@@ -1664,6 +1854,7 @@ namespace SoopPinballCollector
             if (collecting)
             {
                 _connectButton.Text = "수집 중지";
+                _connectButton.Glyph = ButtonGlyph.Stop;
                 _connectButton.FillColor = Color.FromArgb(255, 238, 248);
                 _connectButton.GradientColor = Color.Empty;
                 _connectButton.BorderColor = Color.FromArgb(244, 162, 208);
@@ -1673,6 +1864,7 @@ namespace SoopPinballCollector
             else
             {
                 _connectButton.Text = "수집 시작";
+                _connectButton.Glyph = ButtonGlyph.Play;
                 _connectButton.FillColor = Color.FromArgb(25, 106, 246);
                 _connectButton.GradientColor = Color.FromArgb(66, 139, 255);
                 _connectButton.BorderColor = Color.FromArgb(94, 155, 255);
@@ -1767,6 +1959,20 @@ namespace SoopPinballCollector
             return false;
         }
 
+        private bool IsTargetDialogPreviewMode()
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (String.Equals(args[i], "--target-dialog-preview", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private bool IsConnectingPreviewMode()
         {
             string[] args = Environment.GetCommandLineArgs();
@@ -1823,6 +2029,7 @@ namespace SoopPinballCollector
             }
 
             _toast.Text = message;
+            RelayoutToast();
             _toast.Visible = true;
             _toast.BringToFront();
             _toast.Invalidate();
@@ -1830,11 +2037,25 @@ namespace SoopPinballCollector
             _toastTimer.Start();
         }
 
+        private void RelayoutToast()
+        {
+            int viewportWidth = Math.Max(320, _surface.Width);
+            int margin = viewportWidth < 520 ? 8 : 18;
+            int contentWidth = Math.Max(300, viewportWidth - (margin * 2));
+            if (contentWidth < 920)
+            {
+                contentWidth = Math.Max(300, contentWidth - SystemInformation.VerticalScrollBarWidth);
+            }
+
+            int y = viewportWidth < 520 ? 10 : 16;
+            LayoutToast(margin, y, contentWidth);
+        }
+
         private void SeedPreviewRows()
         {
-            _entries.Add(new CollectedEntry { Nickname = "테스트", BalloonCount = 100, CoinCount = 1, PinballName = "테스트", ReceivedAt = DateTime.Now.ToString("HH:mm:ss") });
-            _entries.Add(new CollectedEntry { Nickname = "타요", BalloonCount = 1017, CoinCount = 11, PinballName = "타요의 종겜핀볼", ReceivedAt = DateTime.Now.ToString("HH:mm:ss") });
-            _entries.Add(new CollectedEntry { Nickname = "시소즈", BalloonCount = 200, CoinCount = 2, PinballName = "테스트2", ReceivedAt = DateTime.Now.ToString("HH:mm:ss") });
+            _entries.Add(new CollectedEntry { Source = GiftSource.StarBalloon, Nickname = "테스트", BalloonCount = 100, CoinCount = 1, PinballName = "테스트", ReceivedAt = DateTime.Now.ToString("HH:mm:ss") });
+            _entries.Add(new CollectedEntry { Source = GiftSource.AdBalloon, Nickname = "타요", BalloonCount = 1017, CoinCount = 11, PinballName = "타요의 종겜핀볼", ReceivedAt = DateTime.Now.ToString("HH:mm:ss") });
+            _entries.Add(new CollectedEntry { Source = GiftSource.ChallengeGift, Nickname = "시소즈", BalloonCount = 200, CoinCount = 2, PinballName = "테스트2", ReceivedAt = DateTime.Now.ToString("HH:mm:ss") });
             RefreshPinballText();
         }
 
@@ -1850,6 +2071,7 @@ namespace SoopPinballCollector
                 int balloons = i == 1 ? 100 : i * 100;
                 _entries.Add(new CollectedEntry
                 {
+                    Source = (GiftSource)((i - 1) % 3),
                     Nickname = "테스트" + i,
                     BalloonCount = balloons,
                     CoinCount = CalculateCoins(balloons),
@@ -1867,6 +2089,7 @@ namespace SoopPinballCollector
             {
                 int balloons = i == 1 ? 100 : i * 100;
                 var entry = new CollectedEntry();
+                entry.Source = (GiftSource)((i - 1) % 3);
                 entry.Nickname = "테스트" + i;
                 entry.BalloonCount = balloons;
                 entry.CoinCount = CalculateCoins(balloons);
@@ -1888,6 +2111,63 @@ namespace SoopPinballCollector
         {
             StyleSegment(_nicknameSourceButton, _nicknamePinballMode);
             StyleSegment(_contentSourceButton, !_nicknamePinballMode);
+        }
+
+        private void ToggleTargetPopup()
+        {
+            if (_targetPopup.Visible)
+            {
+                HideTargetPopup();
+                return;
+            }
+
+            ShowTargetPopup();
+        }
+
+        private void ShowTargetPopup()
+        {
+            _targetPopup.SetSelections(_collectStarBalloon, _collectAdBalloon, _collectChallengeGift);
+            LayoutTargetPopup();
+            RefreshTargetPopupBackdrop();
+            _targetPopup.Visible = true;
+            _targetPopup.BringToFront();
+            RefreshTargetButton();
+        }
+
+        private void HideTargetPopup()
+        {
+            if (_targetPopup == null || !_targetPopup.Visible)
+            {
+                return;
+            }
+
+            _targetPopup.Visible = false;
+            RefreshTargetButton();
+        }
+
+        private void RefreshTargetButton()
+        {
+            int selected = (_collectStarBalloon ? 1 : 0) +
+                           (_collectAdBalloon ? 1 : 0) +
+                           (_collectChallengeGift ? 1 : 0);
+            string arrow = _targetPopup != null && _targetPopup.Visible ? "◀" : "▶";
+            _targetButton.Text = "수집 대상 " + selected + "/3 " + arrow;
+            StyleSegment(_targetButton, selected == 3);
+        }
+
+        private bool IsGiftSourceEnabled(GiftSource source)
+        {
+            if (source == GiftSource.AdBalloon)
+            {
+                return _collectAdBalloon;
+            }
+
+            if (source == GiftSource.ChallengeGift)
+            {
+                return _collectChallengeGift;
+            }
+
+            return _collectStarBalloon;
         }
 
         private void StyleSegment(RoundButton button, bool active)
@@ -2105,7 +2385,7 @@ namespace SoopPinballCollector
         {
             int unit = GetCoinUnit();
             int bonusAt = unit * 10;
-            return "수집된 내용을 직접 수정할 수 있습니다.\r\n기준 별풍선 " + unit + "개마다 1코인으로 반영됩니다.\r\n예 : " + unit + "개 = 1코인, " + bonusAt + "개 = 11코인";
+            return "별풍선 " + unit + "개 = 1코인\r\n" + bonusAt + "개 = 11코인";
         }
 
         private void RefreshCoinGuide()
@@ -2263,6 +2543,299 @@ namespace SoopPinballCollector
         public string ServiceLanguage;
     }
 
+#if AUTO_PINBALL
+    internal static class PinballSiteInjector
+    {
+        private static readonly JavaScriptSerializer Serializer = new JavaScriptSerializer();
+
+        public static async Task<bool> OpenAndInjectAsync(string url, string names)
+        {
+            foreach (string browserPath in FindPreferredBrowserCandidates())
+            {
+                if (await TryOpenAndInjectAsync(browserPath, url, names))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool OpenInPreferredBrowser(string url)
+        {
+            foreach (string browserPath in FindPreferredBrowserCandidates())
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(browserPath, "--new-window \"" + url + "\"") { UseShellExecute = false });
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                Process.Start(url);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static async Task<bool> TryOpenAndInjectAsync(string browserPath, string url, string names)
+        {
+            int port = ReserveLoopbackPort();
+            string profileDir = Path.Combine(Path.GetTempPath(), "TayoPinballBrowser-" + port.ToString());
+            Directory.CreateDirectory(profileDir);
+
+            string args = "--remote-debugging-port=" + port.ToString() +
+                          " --user-data-dir=\"" + profileDir + "\"" +
+                          " --no-first-run --no-default-browser-check --new-window \"" + url + "\"";
+            try
+            {
+                Process.Start(new ProcessStartInfo(browserPath, args) { UseShellExecute = false });
+            }
+            catch
+            {
+                return false;
+            }
+
+            string wsUrl = await WaitForWebSocketDebuggerUrlAsync(port);
+            if (wsUrl.Length == 0)
+            {
+                return false;
+            }
+
+            string script = BuildInjectionScript(names);
+            for (int attempt = 0; attempt < 18; attempt++)
+            {
+                if (await EvaluateBooleanAsync(wsUrl, script))
+                {
+                    return true;
+                }
+
+                await Task.Delay(250);
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<string> FindPreferredBrowserCandidates()
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool foundChrome = false;
+            foreach (string candidate in ExistingBrowserCandidates(GetChromeCandidates(), seen))
+            {
+                foundChrome = true;
+                yield return candidate;
+            }
+
+            if (foundChrome)
+            {
+                yield break;
+            }
+
+            foreach (string candidate in ExistingBrowserCandidates(GetEdgeCandidates(), seen))
+            {
+                yield return candidate;
+            }
+        }
+
+        private static IEnumerable<string> GetChromeCandidates()
+        {
+            yield return Path.Combine(GetProgramFiles64Path(), "Google\\Chrome\\Application\\chrome.exe");
+            yield return Path.Combine(GetProgramFilesPath(), "Google\\Chrome\\Application\\chrome.exe");
+            yield return "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google\\Chrome\\Application\\chrome.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google\\Chrome\\Application\\chrome.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google\\Chrome\\Application\\chrome.exe");
+        }
+
+        private static IEnumerable<string> GetEdgeCandidates()
+        {
+            yield return Path.Combine(GetProgramFiles64Path(), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return Path.Combine(GetProgramFilesPath(), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe";
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft\\Edge\\Application\\msedge.exe");
+            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Edge\\Application\\msedge.exe");
+        }
+
+        private static string GetProgramFiles64Path()
+        {
+            string path = Environment.GetEnvironmentVariable("ProgramW6432");
+            if (!String.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+
+            return "C:\\Program Files";
+        }
+
+        private static string GetProgramFilesPath()
+        {
+            string path = Environment.GetEnvironmentVariable("ProgramFiles");
+            if (!String.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+
+            return Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        }
+
+        private static IEnumerable<string> ExistingBrowserCandidates(IEnumerable<string> candidates, HashSet<string> seen)
+        {
+            foreach (string candidate in candidates)
+            {
+                if (File.Exists(candidate) && seen.Add(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        private static int ReserveLoopbackPort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+
+        private static async Task<string> WaitForWebSocketDebuggerUrlAsync(int port)
+        {
+            string endpoint = "http://127.0.0.1:" + port.ToString() + "/json/list";
+            using (var client = new WebClient())
+            {
+                client.Encoding = Encoding.UTF8;
+                for (int attempt = 0; attempt < 32; attempt++)
+                {
+                    try
+                    {
+                        string json = await client.DownloadStringTaskAsync(new Uri(endpoint));
+                        string wsUrl = ExtractWebSocketDebuggerUrl(json);
+                        if (wsUrl.Length > 0)
+                        {
+                            return wsUrl;
+                        }
+                    }
+                    catch
+                    {
+                    }
+
+                    await Task.Delay(250);
+                }
+            }
+
+            return "";
+        }
+
+        private static string ExtractWebSocketDebuggerUrl(string json)
+        {
+            object parsed = Serializer.DeserializeObject(json);
+            object[] tabs = parsed as object[];
+            if (tabs == null)
+            {
+                return "";
+            }
+
+            string fallback = "";
+            foreach (object tab in tabs)
+            {
+                var item = tab as Dictionary<string, object>;
+                if (item == null || !item.ContainsKey("webSocketDebuggerUrl"))
+                {
+                    continue;
+                }
+
+                string wsUrl = Convert.ToString(item["webSocketDebuggerUrl"]);
+                string tabUrl = item.ContainsKey("url") ? Convert.ToString(item["url"]) : "";
+                if (fallback.Length == 0)
+                {
+                    fallback = wsUrl;
+                }
+
+                if (tabUrl.IndexOf("gyeon-ai.github.io/TayoPinball-Web", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return wsUrl;
+                }
+            }
+
+            return fallback;
+        }
+
+        private static async Task<bool> EvaluateBooleanAsync(string wsUrl, string script)
+        {
+            using (var socket = new ClientWebSocket())
+            using (var cts = new CancellationTokenSource(5000))
+            {
+                await socket.ConnectAsync(new Uri(wsUrl), cts.Token);
+                var payload = new Dictionary<string, object>();
+                payload["id"] = 1;
+                payload["method"] = "Runtime.evaluate";
+                payload["params"] = new Dictionary<string, object>
+                {
+                    { "expression", script },
+                    { "returnByValue", true }
+                };
+
+                byte[] bytes = Encoding.UTF8.GetBytes(Serializer.Serialize(payload));
+                await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cts.Token);
+
+                string response = await ReceiveTextAsync(socket, cts.Token);
+                return ResponseIsTrue(response);
+            }
+        }
+
+        private static async Task<string> ReceiveTextAsync(ClientWebSocket socket, CancellationToken token)
+        {
+            byte[] buffer = new byte[8192];
+            using (var stream = new MemoryStream())
+            {
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        break;
+                    }
+
+                    stream.Write(buffer, 0, result.Count);
+                }
+                while (!result.EndOfMessage);
+
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        private static bool ResponseIsTrue(string response)
+        {
+            return response.IndexOf("\"value\":true", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string BuildInjectionScript(string names)
+        {
+            string jsonValue = Serializer.Serialize(names);
+            return "(function(){var value=" + jsonValue + ";" +
+                   "function setValue(el,val){var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;" +
+                   "var desc=Object.getOwnPropertyDescriptor(proto,'value');if(desc&&desc.set){desc.set.call(el,val);}else{el.value=val;}" +
+                   "el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}" +
+                   "var controls=Array.prototype.slice.call(document.querySelectorAll('textarea,input'));" +
+                   "controls=controls.filter(function(el){var type=(el.type||'').toLowerCase();return ['button','submit','range','checkbox','radio','hidden'].indexOf(type)<0;});" +
+                   "var target=controls.filter(function(el){return String(el.value||'').indexOf('*')>=0;})[0];" +
+                   "if(!target){controls.sort(function(a,b){return (b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight);});target=controls[0];}" +
+                   "if(!target){return false;}setValue(target,value);target.focus();return target.value===value;})()";
+        }
+    }
+
+#endif
+
     internal sealed class SoopLiveChatClient : IDisposable
     {
         private const string Fs = "\u000c";
@@ -2279,7 +2852,7 @@ namespace SoopPinballCollector
 
         public event Action<SoopLiveInfo> BroadcastResolved = delegate { };
         public event Action Joined = delegate { };
-        public event Action<string, int> BalloonReceived = delegate { };
+        public event Action<GiftSource, string, int> BalloonReceived = delegate { };
         public event Action<string, string> ChatReceived = delegate { };
         public event Action<string> Disconnected = delegate { };
 
@@ -2529,7 +3102,20 @@ namespace SoopPinballCollector
                     int count;
                     if (Int32.TryParse(parts[3], out count) && count > 0)
                     {
-                        BalloonReceived(parts[2], count);
+                        BalloonReceived(GiftSource.StarBalloon, parts[2], count);
+                    }
+                }
+                return;
+            }
+
+            if (serviceCommand == 33)
+            {
+                if (parts.Length >= 6)
+                {
+                    int count;
+                    if (Int32.TryParse(parts[5], out count) && count > 0)
+                    {
+                        BalloonReceived(GiftSource.StarBalloon, parts[4], count);
                     }
                 }
                 return;
@@ -2548,7 +3134,7 @@ namespace SoopPinballCollector
                     int count;
                     if (nickname.Length > 0 && Int32.TryParse(parts[9], out count) && count > 0)
                     {
-                        BalloonReceived(nickname, count);
+                        BalloonReceived(GiftSource.AdBalloon, nickname, count);
                     }
                 }
                 return;
@@ -2605,7 +3191,7 @@ namespace SoopPinballCollector
             int count = GetInt(gift, "gift_count");
             if (nickname.Length > 0 && count > 0)
             {
-                BalloonReceived(nickname, count);
+                BalloonReceived(GiftSource.ChallengeGift, nickname, count);
             }
         }
 
@@ -2693,11 +3279,401 @@ namespace SoopPinballCollector
         }
     }
 
+    internal sealed class GiftSourcePopup : RoundedPanel
+    {
+        private readonly Color _line;
+        private int _backdropSplitX;
+        private Color _leftBackdropColor;
+        private Color _rightBackdropColor;
+        private Bitmap _backdropImage;
+        private readonly GiftSourceOption _starBalloon;
+        private readonly GiftSourceOption _adBalloon;
+        private readonly GiftSourceOption _challengeGift;
+
+        public event EventHandler SelectionChanged;
+        public event EventHandler SelectionRejected;
+
+        public bool CollectStarBalloon { get { return _starBalloon.Checked; } }
+        public bool CollectAdBalloon { get { return _adBalloon.Checked; } }
+        public bool CollectChallengeGift { get { return _challengeGift.Checked; } }
+
+        public GiftSourcePopup(
+            Color text,
+            Color muted,
+            Color purple,
+            Color line,
+            bool collectStarBalloon,
+            bool collectAdBalloon,
+            bool collectChallengeGift)
+        {
+            _line = line;
+            Size = new Size(244, 140);
+            Radius = 12;
+            FillColor = Color.FromArgb(238, 246, 255);
+            BorderColor = Color.FromArgb(23, 54, 130);
+            BackColor = Color.Transparent;
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+            _leftBackdropColor = Color.FromArgb(6, 19, 43);
+            _rightBackdropColor = FillColor;
+
+            var title = new Label();
+            title.Text = "수집 대상";
+            title.AutoSize = false;
+            title.TextAlign = ContentAlignment.MiddleLeft;
+            title.ForeColor = text;
+            title.BackColor = Color.Transparent;
+            title.Font = UiFont.Make(11.5f, FontStyle.Bold);
+            title.SetBounds(14, 9, 216, 24);
+            Controls.Add(title);
+
+            var subtitle = new Label();
+            subtitle.Text = "수집할 후원 종류를 선택하세요.";
+            subtitle.AutoSize = false;
+            subtitle.TextAlign = ContentAlignment.MiddleLeft;
+            subtitle.ForeColor = muted;
+            subtitle.BackColor = Color.Transparent;
+            subtitle.Font = UiFont.Make(8.5f, FontStyle.Regular);
+            subtitle.SetBounds(14, 32, 216, 20);
+            Controls.Add(subtitle);
+
+            _starBalloon = CreateOption("별풍선", 14, 58, 104, 32, collectStarBalloon, text, purple);
+            _adBalloon = CreateOption("애드벌룬", 126, 58, 104, 32, collectAdBalloon, text, purple);
+            _challengeGift = CreateOption("도전미션", 14, 98, 104, 32, collectChallengeGift, text, purple);
+            Controls.Add(_starBalloon);
+            Controls.Add(_adBalloon);
+            Controls.Add(_challengeGift);
+
+        }
+
+        public void SetSelections(bool starBalloon, bool adBalloon, bool challengeGift)
+        {
+            _starBalloon.Checked = starBalloon;
+            _adBalloon.Checked = adBalloon;
+            _challengeGift.Checked = challengeGift;
+        }
+
+        public void SetBackdrop(int splitX, Color leftColor, Color rightColor)
+        {
+            int nextSplitX = Math.Max(0, Math.Min(Width, splitX));
+            if (_backdropSplitX == nextSplitX &&
+                _leftBackdropColor == leftColor &&
+                _rightBackdropColor == rightColor)
+            {
+                return;
+            }
+
+            _backdropSplitX = nextSplitX;
+            _leftBackdropColor = leftColor;
+            _rightBackdropColor = rightColor;
+            Invalidate();
+        }
+
+        public void SetBackdropImage(Bitmap image)
+        {
+            Bitmap nextBackdrop = image == null ? null : new Bitmap(image);
+            Bitmap previousBackdrop = _backdropImage;
+            _backdropImage = nextBackdrop;
+            if (previousBackdrop != null)
+            {
+                previousBackdrop.Dispose();
+            }
+            Invalidate();
+        }
+
+        private GiftSourceOption CreateOption(string text, int x, int y, int width, int height, bool isChecked, Color foreColor, Color accent)
+        {
+            var option = new GiftSourceOption();
+            option.Text = text;
+            option.Checked = isChecked;
+            option.SetBounds(x, y, width, height);
+            option.Font = UiFont.Make(9.0f, FontStyle.Bold);
+            option.ForeColor = foreColor;
+            option.FillColor = Color.FromArgb(250, 253, 255);
+            option.CheckedFillColor = Color.FromArgb(216, 233, 255);
+            option.BorderColor = Color.FromArgb(126, 172, 239);
+            option.AccentColor = accent;
+            option.Cursor = Cursors.Hand;
+            option.Click += HandleOptionClick;
+            return option;
+        }
+
+        private void HandleOptionClick(object sender, EventArgs e)
+        {
+            if (!_starBalloon.Checked && !_adBalloon.Checked && !_challengeGift.Checked)
+            {
+                GiftSourceOption option = sender as GiftSourceOption;
+                if (option != null)
+                {
+                    option.Checked = true;
+                }
+                if (SelectionRejected != null)
+                {
+                    SelectionRejected(this, EventArgs.Empty);
+                }
+                return;
+            }
+
+            if (SelectionChanged != null)
+            {
+                SelectionChanged(this, EventArgs.Empty);
+            }
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            if (_backdropImage != null && _backdropImage.Size == ClientSize)
+            {
+                e.Graphics.DrawImageUnscaled(_backdropImage, Point.Empty);
+                return;
+            }
+
+            if (_backdropSplitX > 0)
+            {
+                using (var leftBrush = new SolidBrush(_leftBackdropColor))
+                {
+                    e.Graphics.FillRectangle(leftBrush, 0, 0, _backdropSplitX, Height);
+                }
+            }
+
+            using (var rightBrush = new SolidBrush(_rightBackdropColor))
+            {
+                e.Graphics.FillRectangle(rightBrush, _backdropSplitX, 0, Width - _backdropSplitX, Height);
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            if (Width <= 1 || Height <= 1)
+            {
+                return;
+            }
+
+            const int renderScale = 4;
+            const int borderWidth = 2;
+            int renderWidth = Width * renderScale;
+            int renderHeight = Height * renderScale;
+            using (var chrome = new Bitmap(renderWidth, renderHeight, PixelFormat.Format32bppPArgb))
+            using (Graphics chromeGraphics = Graphics.FromImage(chrome))
+            {
+                chromeGraphics.Clear(Color.Transparent);
+                chromeGraphics.SmoothingMode = SmoothingMode.AntiAlias;
+                chromeGraphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                chromeGraphics.CompositingQuality = CompositingQuality.HighQuality;
+
+                Rectangle outerRect = new Rectangle(0, 0, renderWidth - 1, renderHeight - 1);
+                int inset = borderWidth * renderScale;
+                Rectangle innerRect = new Rectangle(
+                    inset,
+                    inset,
+                    Math.Max(1, renderWidth - (inset * 2) - 1),
+                    Math.Max(1, renderHeight - (inset * 2) - 1));
+                using (GraphicsPath outerPath = Shape.Rounded(outerRect, Radius * renderScale))
+                using (GraphicsPath innerPath = Shape.Rounded(innerRect, Math.Max(1, (Radius - borderWidth) * renderScale)))
+                using (var borderBrush = new SolidBrush(BorderColor))
+                using (var fillBrush = new SolidBrush(FillColor))
+                {
+                    chromeGraphics.FillPath(borderBrush, outerPath);
+                    chromeGraphics.FillPath(fillBrush, innerPath);
+                }
+
+                e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+                e.Graphics.CompositingMode = CompositingMode.SourceOver;
+                e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                e.Graphics.DrawImage(
+                    chrome,
+                    new Rectangle(0, 0, Width, Height),
+                    new Rectangle(0, 0, renderWidth, renderHeight),
+                    GraphicsUnit.Pixel);
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _backdropImage != null)
+            {
+                _backdropImage.Dispose();
+                _backdropImage = null;
+            }
+            base.Dispose(disposing);
+        }
+    }
+
+    internal sealed class PopupDismissMessageFilter : IMessageFilter
+    {
+        private const int WmKeyDown = 0x0100;
+        private const int WmLeftButtonDown = 0x0201;
+        private const int WmRightButtonDown = 0x0204;
+        private const int WmMiddleButtonDown = 0x0207;
+        private const int WmNonClientLeftButtonDown = 0x00A1;
+
+        private readonly Control _popup;
+        private readonly Control _anchor;
+        private readonly Action _dismiss;
+
+        public PopupDismissMessageFilter(Control popup, Control anchor, Action dismiss)
+        {
+            _popup = popup;
+            _anchor = anchor;
+            _dismiss = dismiss;
+        }
+
+        public bool PreFilterMessage(ref Message message)
+        {
+            if (_popup == null || !_popup.Visible || _popup.IsDisposed)
+            {
+                return false;
+            }
+
+            if (message.Msg == WmKeyDown && (Keys)(int)message.WParam == Keys.Escape)
+            {
+                _dismiss();
+                return true;
+            }
+
+            if (message.Msg != WmLeftButtonDown &&
+                message.Msg != WmRightButtonDown &&
+                message.Msg != WmMiddleButtonDown &&
+                message.Msg != WmNonClientLeftButtonDown)
+            {
+                return false;
+            }
+
+            Point screenPoint = Control.MousePosition;
+            bool insidePopup = _popup.RectangleToScreen(_popup.ClientRectangle).Contains(screenPoint);
+            bool insideAnchor = _anchor != null && !_anchor.IsDisposed &&
+                                _anchor.RectangleToScreen(_anchor.ClientRectangle).Contains(screenPoint);
+            if (!insidePopup && !insideAnchor)
+            {
+                _dismiss();
+            }
+
+            return false;
+        }
+    }
+
+    internal sealed class GiftSourceOption : Control
+    {
+        private bool _checked;
+
+        public bool Checked
+        {
+            get { return _checked; }
+            set
+            {
+                if (_checked == value)
+                {
+                    return;
+                }
+
+                _checked = value;
+                Invalidate();
+            }
+        }
+
+        public Color FillColor { get; set; }
+        public Color CheckedFillColor { get; set; }
+        public Color BorderColor { get; set; }
+        public Color AccentColor { get; set; }
+
+        public GiftSourceOption()
+        {
+            FillColor = Color.White;
+            CheckedFillColor = Color.FromArgb(232, 242, 255);
+            BorderColor = Color.FromArgb(180, 205, 242);
+            AccentColor = Color.FromArgb(37, 99, 235);
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.ResizeRedraw |
+                ControlStyles.Selectable |
+                ControlStyles.SupportsTransparentBackColor |
+                ControlStyles.UserPaint,
+                true);
+            BackColor = Color.Transparent;
+            TabStop = true;
+            AccessibleRole = AccessibleRole.CheckButton;
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            Checked = !Checked;
+            base.OnClick(e);
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter)
+            {
+                Checked = !Checked;
+                e.Handled = true;
+                return;
+            }
+
+            base.OnKeyDown(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            if (Width <= 1 || Height <= 1)
+            {
+                return;
+            }
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle body = new Rectangle(0, 0, Width - 1, Height - 1);
+            Color fill = Checked ? CheckedFillColor : FillColor;
+            Color border = Checked ? AccentColor : BorderColor;
+            using (GraphicsPath bodyPath = Shape.Rounded(body, 8))
+            using (SolidBrush bodyBrush = new SolidBrush(fill))
+            using (Pen bodyPen = new Pen(border))
+            {
+                e.Graphics.FillPath(bodyBrush, bodyPath);
+                e.Graphics.DrawPath(bodyPen, bodyPath);
+            }
+
+            int boxSize = 16;
+            Rectangle box = new Rectangle(9, (Height - boxSize) / 2, boxSize, boxSize);
+            using (GraphicsPath boxPath = Shape.Rounded(box, 4))
+            using (SolidBrush boxBrush = new SolidBrush(Checked ? AccentColor : Color.White))
+            using (Pen boxPen = new Pen(Checked ? AccentColor : Color.FromArgb(115, 133, 165)))
+            {
+                e.Graphics.FillPath(boxBrush, boxPath);
+                e.Graphics.DrawPath(boxPen, boxPath);
+            }
+
+            if (Checked)
+            {
+                using (var checkPen = new Pen(Color.White, 2f))
+                {
+                    checkPen.StartCap = LineCap.Round;
+                    checkPen.EndCap = LineCap.Round;
+                    e.Graphics.DrawLines(checkPen, new[]
+                    {
+                        new Point(box.X + 4, box.Y + 8),
+                        new Point(box.X + 7, box.Y + 11),
+                        new Point(box.X + 12, box.Y + 5)
+                    });
+                }
+            }
+
+            Rectangle textRect = new Rectangle(box.Right + 7, 0, Width - box.Right - 10, Height);
+            TextRenderer.DrawText(
+                e.Graphics,
+                Text,
+                Font,
+                textRect,
+                ForeColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+
+        }
+    }
+
     internal sealed class EntryRowControl : UserControl
     {
-        public const int RowHeight = 64;
+        public const int RowHeight = 40;
 
-        private readonly CollectedEntry _entry;
+        private CollectedEntry _entry;
         private int _index;
         private readonly Color _text;
         private readonly Color _muted;
@@ -2714,9 +3690,10 @@ namespace SoopPinballCollector
         private readonly Label _metaLabel;
         private readonly RoundedPanel _coinFrame;
         private readonly TextBox _coinBox;
-        private readonly Label _coinSuffixLabel;
         private readonly Label _deleteLabel;
         private bool _syncingEntryValues;
+        private bool _showMeta;
+        private bool _showCoin;
 
         public event EventHandler EntryChanged;
         public event EventHandler DeleteClicked;
@@ -2748,6 +3725,7 @@ namespace SoopPinballCollector
             _indexBadge.BorderColor = _lavender;
             _indexBadge.Radius = 8;
             Controls.Add(_indexBadge);
+            _indexBadge.Visible = false;
 
             _editFrame = new RoundedPanel();
             _editFrame.Radius = 7;
@@ -2755,15 +3733,22 @@ namespace SoopPinballCollector
             _editFrame.BorderColor = _editBorder;
             _editFrame.BackColor = _card;
             Controls.Add(_editFrame);
+            _editFrame.Visible = false;
 
             _nameBox = new TextBox();
             _nameBox.BorderStyle = BorderStyle.None;
             _nameBox.BackColor = _editFill;
             _nameBox.ForeColor = _text;
             _nameBox.Font = UiFont.Make(9.8f, FontStyle.Bold);
+            _nameBox.TextAlign = HorizontalAlignment.Center;
             _nameBox.Text = _entry.PinballName;
             _nameBox.TextChanged += delegate
             {
+                if (_syncingEntryValues)
+                {
+                    return;
+                }
+
                 _entry.PinballName = _nameBox.Text;
                 if (EntryChanged != null)
                 {
@@ -2773,23 +3758,27 @@ namespace SoopPinballCollector
             _nameBox.GotFocus += delegate
             {
                 _editFrame.BorderColor = _purple;
-                _editFrame.Invalidate();
+                Invalidate(_editFrame.Bounds);
             };
             _nameBox.LostFocus += delegate
             {
                 _editFrame.BorderColor = _editBorder;
-                _editFrame.Invalidate();
+                _nameBox.Visible = false;
+                Invalidate(_editFrame.Bounds);
             };
             Controls.Add(_nameBox);
+            _nameBox.Visible = false;
             _nameBox.BringToFront();
 
             _metaLabel = new Label();
             _metaLabel.AutoSize = false;
             _metaLabel.BackColor = _card;
-            _metaLabel.ForeColor = _muted;
-            _metaLabel.Font = UiFont.Make(8.2f, FontStyle.Regular);
-            _metaLabel.Text = _entry.Nickname + " · 별풍선 " + _entry.BalloonCount + "개";
+            _metaLabel.ForeColor = Color.FromArgb(49, 72, 115);
+            _metaLabel.Font = UiFont.Make(8.5f, FontStyle.Regular);
+            _metaLabel.TextAlign = ContentAlignment.MiddleCenter;
+            _metaLabel.Text = _entry.Nickname + " · " + GiftSourceInfo.GetLabel(_entry.Source) + " " + _entry.BalloonCount + "개";
             Controls.Add(_metaLabel);
+            _metaLabel.Visible = false;
 
             _coinFrame = new RoundedPanel();
             _coinFrame.Radius = 7;
@@ -2798,14 +3787,15 @@ namespace SoopPinballCollector
             _coinFrame.BackColor = _card;
             _coinFrame.Cursor = Cursors.IBeam;
             Controls.Add(_coinFrame);
+            _coinFrame.Visible = false;
 
             _coinBox = new TextBox();
             _coinBox.BorderStyle = BorderStyle.None;
             _coinBox.BackColor = _lavender;
             _coinBox.ForeColor = Color.FromArgb(13, 49, 133);
-            _coinBox.Font = UiFont.Make(8.1f, FontStyle.Bold);
-            _coinBox.TextAlign = HorizontalAlignment.Right;
-            _coinBox.Text = _entry.CoinCount.ToString();
+            _coinBox.Font = UiFont.Make(8.5f, FontStyle.Bold);
+            _coinBox.TextAlign = HorizontalAlignment.Center;
+            _coinBox.Text = GetCoinDisplayText();
             _coinBox.TextChanged += delegate
             {
                 if (_syncingEntryValues)
@@ -2826,6 +3816,7 @@ namespace SoopPinballCollector
                     }
 
                     _entry.CoinCount = coins;
+                    LayoutChildren();
                     if (EntryChanged != null)
                     {
                         EntryChanged(this, EventArgs.Empty);
@@ -2841,8 +3832,11 @@ namespace SoopPinballCollector
             };
             _coinBox.GotFocus += delegate
             {
+                _syncingEntryValues = true;
+                _coinBox.Text = _entry.CoinCount.ToString();
+                _syncingEntryValues = false;
                 _coinFrame.BorderColor = _purple;
-                _coinFrame.Invalidate();
+                Invalidate(_coinFrame.Bounds);
                 MoveCoinCursorToEnd();
             };
             _coinBox.MouseUp += delegate
@@ -2857,28 +3851,19 @@ namespace SoopPinballCollector
                 }
 
                 _syncingEntryValues = true;
-                _coinBox.Text = _entry.CoinCount.ToString();
+                _coinBox.Text = GetCoinDisplayText();
                 _syncingEntryValues = false;
                 _coinFrame.BorderColor = Color.FromArgb(139, 184, 255);
-                _coinFrame.Invalidate();
+                _coinBox.Visible = false;
+                Invalidate(_coinFrame.Bounds);
                 if (EntryChanged != null)
                 {
                     EntryChanged(this, EventArgs.Empty);
                 }
             };
             Controls.Add(_coinBox);
+            _coinBox.Visible = false;
             _coinBox.BringToFront();
-
-            _coinSuffixLabel = new Label();
-            _coinSuffixLabel.Text = "코인";
-            _coinSuffixLabel.AutoSize = false;
-            _coinSuffixLabel.TextAlign = ContentAlignment.MiddleLeft;
-            _coinSuffixLabel.BackColor = _lavender;
-            _coinSuffixLabel.ForeColor = Color.FromArgb(13, 49, 133);
-            _coinSuffixLabel.Font = UiFont.Make(8.1f, FontStyle.Bold);
-            _coinSuffixLabel.Cursor = Cursors.IBeam;
-            Controls.Add(_coinSuffixLabel);
-            _coinSuffixLabel.BringToFront();
 
             _deleteLabel = new Label();
             _deleteLabel.Text = "×";
@@ -2896,14 +3881,7 @@ namespace SoopPinballCollector
                 }
             };
             Controls.Add(_deleteLabel);
-
-            MouseDown += RaiseBlankClicked;
-            _indexBadge.MouseDown += RaiseBlankClicked;
-            _editFrame.MouseDown += RaiseBlankClicked;
-            _metaLabel.MouseDown += RaiseBlankClicked;
-            _coinFrame.MouseDown += delegate { _coinBox.Focus(); };
-            _coinSuffixLabel.MouseDown += delegate { _coinBox.Focus(); };
-            _deleteLabel.MouseDown += RaiseBlankClicked;
+            _deleteLabel.Visible = false;
 
             Resize += delegate { LayoutChildren(); };
             LayoutChildren();
@@ -2917,6 +3895,67 @@ namespace SoopPinballCollector
             }
         }
 
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left && _deleteLabel.Bounds.Contains(e.Location))
+            {
+                if (DeleteClicked != null)
+                {
+                    DeleteClicked(this, EventArgs.Empty);
+                }
+                return;
+            }
+
+            if (e.Button == MouseButtons.Left && _editFrame.Bounds.Contains(e.Location))
+            {
+                _coinBox.Visible = false;
+                _nameBox.Visible = true;
+                _nameBox.BringToFront();
+                _nameBox.Focus();
+                _nameBox.SelectionStart = _nameBox.TextLength;
+                return;
+            }
+
+            if (e.Button == MouseButtons.Left && _showCoin && _coinFrame.Bounds.Contains(e.Location))
+            {
+                _nameBox.Visible = false;
+                _coinBox.Visible = true;
+                _coinBox.BringToFront();
+                _coinBox.Focus();
+                MoveCoinCursorToEnd();
+                return;
+            }
+
+            RaiseBlankClicked(this, e);
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            Cursor next = Cursors.Default;
+            if (_deleteLabel.Bounds.Contains(e.Location))
+            {
+                next = Cursors.Hand;
+            }
+            else if (_editFrame.Bounds.Contains(e.Location) || (_showCoin && _coinFrame.Bounds.Contains(e.Location)))
+            {
+                next = Cursors.IBeam;
+            }
+
+            if (Cursor != next)
+            {
+                Cursor = next;
+            }
+
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            Cursor = Cursors.Default;
+            base.OnMouseLeave(e);
+        }
+
         public void SetIndex(int index)
         {
             if (_index == index)
@@ -2926,16 +3965,54 @@ namespace SoopPinballCollector
 
             _index = index;
             _indexBadge.Text = _index.ToString();
-            _indexBadge.Invalidate();
+            Invalidate(_indexBadge.Bounds);
+        }
+
+        public void SetEntry(CollectedEntry entry, int index)
+        {
+            if (entry == null)
+            {
+                return;
+            }
+
+            if (Object.ReferenceEquals(_entry, entry))
+            {
+                SetIndex(index);
+                return;
+            }
+
+            _entry = entry;
+            _index = index;
+            _syncingEntryValues = true;
+            try
+            {
+                _indexBadge.Text = _index.ToString();
+                _nameBox.Text = _entry.PinballName;
+                _metaLabel.Text = _entry.Nickname + " · " + GiftSourceInfo.GetLabel(_entry.Source) + " " + _entry.BalloonCount + "개";
+                _coinBox.Text = GetCoinDisplayText();
+            }
+            finally
+            {
+                _syncingEntryValues = false;
+            }
+
+            LayoutChildren();
+            Invalidate();
         }
 
         public void RefreshEntryValues()
         {
-            _metaLabel.Text = _entry.Nickname + " · 별풍선 " + _entry.BalloonCount + "개";
-            if (!_coinBox.Focused && _coinBox.Text != _entry.CoinCount.ToString())
+            _metaLabel.Text = _entry.Nickname + " · " + GiftSourceInfo.GetLabel(_entry.Source) + " " + _entry.BalloonCount + "개";
+            if (!_nameBox.Focused && _nameBox.Text != _entry.PinballName)
             {
                 _syncingEntryValues = true;
-                _coinBox.Text = _entry.CoinCount.ToString();
+                _nameBox.Text = _entry.PinballName;
+                _syncingEntryValues = false;
+            }
+            if (!_coinBox.Focused && _coinBox.Text != GetCoinDisplayText())
+            {
+                _syncingEntryValues = true;
+                _coinBox.Text = GetCoinDisplayText();
                 _syncingEntryValues = false;
             }
             LayoutChildren();
@@ -2944,42 +4021,40 @@ namespace SoopPinballCollector
 
         private void LayoutChildren()
         {
-            int badge = 26;
+            int badge = 22;
             int left = 0;
             int editX = left + badge + 8;
-            int contentX = editX + 8;
             int deleteW = 28;
-            int right = Width - deleteW - 10;
-            int contentW = Math.Max(80, right - editX - 6);
-            int coinW = _entry.CoinCount >= 1000 ? 82 : (_entry.CoinCount >= 100 ? 74 : 62);
-
-            _indexBadge.SetBounds(left, 7, badge, badge);
-            _deleteLabel.SetBounds(Width - deleteW - 4, 18, deleteW, 28);
-            int editW = Math.Max(90, contentW + 4);
-            int coinX = editX + editW - coinW - 6;
-            int metaX = contentX - 4;
-            int metaW = Math.Max(80, coinX - metaX - 8);
-            _editFrame.SetBounds(editX, 6, editW, 28);
-            _nameBox.SetBounds(contentX, 12, Math.Max(40, editW - 18), 18);
-            _metaLabel.SetBounds(metaX, 40, metaW, 18);
-            _coinFrame.SetBounds(coinX, 39, coinW, 20);
-            int suffixW = 30;
-            _coinSuffixLabel.SetBounds(coinX + coinW - suffixW - 6, 40, suffixW, 18);
-            _coinBox.SetBounds(coinX + 6, 41, Math.Max(18, coinW - suffixW - 14), 15);
-
-            if (Width < 360)
+            int coinW = _entry.CoinCount >= 1000 ? 80 : (_entry.CoinCount >= 100 ? 74 : 68);
+            int coinX = Width - deleteW - coinW - 10;
+            bool showMeta = Width >= 470;
+            int metaW = showMeta ? Math.Min(190, Math.Max(146, Width / 4)) : 0;
+            int metaX = coinX - metaW - 8;
+            int editW = Math.Min(500, Math.Max(150, metaX - editX - 10));
+            if (!showMeta)
             {
-                _coinFrame.Visible = false;
+                editW = Math.Max(110, coinX - editX - 10);
+            }
+
+            _indexBadge.SetBounds(left, (RowHeight - badge) / 2, badge, badge);
+            _deleteLabel.SetBounds(Width - deleteW - 4, (RowHeight - 26) / 2, deleteW, 26);
+            const int controlY = 5;
+            _editFrame.SetBounds(editX, controlY, editW, 30);
+            _nameBox.SetBounds(editX + 8, controlY + 6, Math.Max(40, editW - 16), 18);
+            _metaLabel.SetBounds(metaX, controlY, metaW, 30);
+            _coinFrame.SetBounds(coinX, controlY, coinW, 30);
+            _coinBox.SetBounds(coinX + 5, controlY + 6, Math.Max(18, coinW - 10), 18);
+            _showMeta = showMeta;
+            _showCoin = Width >= 330;
+            if (!_showCoin)
+            {
                 _coinBox.Visible = false;
-                _coinSuffixLabel.Visible = false;
-                _metaLabel.SetBounds(metaX, 40, contentW, 18);
             }
-            else
-            {
-                _coinFrame.Visible = true;
-                _coinBox.Visible = true;
-                _coinSuffixLabel.Visible = true;
-            }
+        }
+
+        private string GetCoinDisplayText()
+        {
+            return _entry.CoinCount.ToString() + " 코인";
         }
 
         private void MoveCoinCursorToEnd()
@@ -3015,6 +4090,94 @@ namespace SoopPinballCollector
                 e.Graphics.FillRectangle(brush, ClientRectangle);
             }
 
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Rectangle badgeBounds = new Rectangle(
+                _indexBadge.Left,
+                _indexBadge.Top,
+                Math.Max(1, _indexBadge.Width - 1),
+                Math.Max(1, _indexBadge.Height - 1));
+            using (GraphicsPath badgePath = Shape.Rounded(badgeBounds, _indexBadge.Radius))
+            using (var badgeBrush = new SolidBrush(_indexBadge.FillColor))
+            {
+                e.Graphics.FillPath(badgeBrush, badgePath);
+            }
+            TextRenderer.DrawText(
+                e.Graphics,
+                _index.ToString(),
+                _indexBadge.Font,
+                _indexBadge.Bounds,
+                _indexBadge.ForeColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+
+            Rectangle editBounds = new Rectangle(
+                _editFrame.Left,
+                _editFrame.Top,
+                Math.Max(1, _editFrame.Width - 1),
+                Math.Max(1, _editFrame.Height - 1));
+            using (GraphicsPath editPath = Shape.Rounded(editBounds, _editFrame.Radius))
+            using (var editBrush = new SolidBrush(_editFill))
+            using (var editPen = new Pen(_editFrame.BorderColor))
+            {
+                e.Graphics.FillPath(editBrush, editPath);
+                e.Graphics.DrawPath(editPen, editPath);
+            }
+            if (!_nameBox.Visible)
+            {
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    _entry.PinballName,
+                    _nameBox.Font,
+                    _editFrame.Bounds,
+                    _nameBox.ForeColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+            }
+
+            if (_showMeta)
+            {
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    _entry.Nickname + " · " + GiftSourceInfo.GetLabel(_entry.Source) + " " + _entry.BalloonCount + "개",
+                    _metaLabel.Font,
+                    _metaLabel.Bounds,
+                    _metaLabel.ForeColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+            }
+
+            if (_showCoin)
+            {
+                Rectangle coinBounds = new Rectangle(
+                    _coinFrame.Left,
+                    _coinFrame.Top,
+                    Math.Max(1, _coinFrame.Width - 1),
+                    Math.Max(1, _coinFrame.Height - 1));
+                using (GraphicsPath coinPath = Shape.Rounded(coinBounds, _coinFrame.Radius))
+                using (var coinBrush = new SolidBrush(_lavender))
+                using (var coinPen = new Pen(_coinFrame.BorderColor))
+                {
+                    e.Graphics.FillPath(coinBrush, coinPath);
+                    e.Graphics.DrawPath(coinPen, coinPath);
+                }
+                if (!_coinBox.Visible)
+                {
+                    TextRenderer.DrawText(
+                        e.Graphics,
+                        GetCoinDisplayText(),
+                        _coinBox.Font,
+                        _coinFrame.Bounds,
+                        _coinBox.ForeColor,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                }
+            }
+
+            TextRenderer.DrawText(
+                e.Graphics,
+                "×",
+                _deleteLabel.Font,
+                _deleteLabel.Bounds,
+                _deleteLabel.ForeColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+
             using (var pen = new Pen(_line))
             {
                 e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
@@ -3022,18 +4185,18 @@ namespace SoopPinballCollector
         }
     }
 
-    internal sealed class ClearEntriesDialog : Form
+    internal sealed class InputRequiredDialog : Form
     {
         private readonly Color _line;
         private readonly Color _surface;
 
-        public ClearEntriesDialog(Font baseFont, Color text, Color muted, Color purple, Color line)
+        public InputRequiredDialog(Font baseFont, Color text, Color muted, Color purple, Color line)
         {
             _line = line;
-            _surface = Color.FromArgb(249, 251, 255);
+            _surface = Color.FromArgb(249, 252, 255);
 
-            Text = "목록 비우기";
-            ClientSize = new Size(334, 152);
+            Text = "입력 필요";
+            ClientSize = new Size(358, 164);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
@@ -3049,7 +4212,134 @@ namespace SoopPinballCollector
             close.ForeColor = muted;
             close.Font = UiFont.Make(11f, FontStyle.Regular);
             close.Cursor = Cursors.Hand;
-            close.SetBounds(ClientSize.Width - 42, 18, 24, 24);
+            close.SetBounds(ClientSize.Width - 42, 16, 24, 24);
+            close.Click += delegate { DialogResult = DialogResult.OK; Close(); };
+            Controls.Add(close);
+
+            var title = new Label();
+            title.Text = "입력 필요";
+            title.AutoSize = false;
+            title.BackColor = Color.Transparent;
+            title.ForeColor = text;
+            title.Font = UiFont.Make(13.2f, FontStyle.Bold);
+            title.SetBounds(24, 20, 250, 28);
+            Controls.Add(title);
+
+            var info = new PillLabel();
+            info.Text = "i";
+            info.TextAlign = ContentAlignment.MiddleCenter;
+            info.Font = UiFont.Make(12f, FontStyle.Bold);
+            info.ForeColor = Color.White;
+            info.FillColor = purple;
+            info.BorderColor = purple;
+            info.Radius = 19;
+            info.SetBounds(24, 62, 38, 38);
+            Controls.Add(info);
+
+            var body = new Label();
+            body.Text = "SOOP 방송 주소 또는 SOOP ID를\r\n입력해 주세요.";
+            body.AutoSize = false;
+            body.BackColor = Color.Transparent;
+            body.ForeColor = muted;
+            body.Font = UiFont.Make(9.1f, FontStyle.Regular);
+            body.TextAlign = ContentAlignment.MiddleLeft;
+            body.SetBounds(76, 60, 256, 44);
+            Controls.Add(body);
+
+            var confirm = DialogButton("확인", Color.White, purple, purple);
+            confirm.SetBounds(252, 112, 82, 36);
+            confirm.Click += delegate { DialogResult = DialogResult.OK; Close(); };
+            Controls.Add(confirm);
+
+            Resize += delegate { ApplyWindowRegion(); };
+            ApplyWindowRegion();
+        }
+
+        private RoundButton DialogButton(string text, Color foreColor, Color fillColor, Color borderColor)
+        {
+            var button = new RoundButton();
+            button.Text = text;
+            button.ForeColor = foreColor;
+            button.FillColor = fillColor;
+            button.BorderColor = borderColor;
+            button.CanvasColor = _surface;
+            button.Radius = 11;
+            button.Font = UiFont.Make(9.2f, FontStyle.Bold);
+            return button;
+        }
+
+        private void ApplyWindowRegion()
+        {
+            if (Width <= 1 || Height <= 1)
+            {
+                return;
+            }
+
+            using (GraphicsPath path = Shape.Rounded(new Rectangle(0, 0, Width, Height), 18))
+            {
+                Region previous = Region;
+                Region = new Region(path);
+                if (previous != null)
+                {
+                    previous.Dispose();
+                }
+            }
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Enter || keyData == Keys.Escape)
+            {
+                DialogResult = DialogResult.OK;
+                Close();
+                return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using (GraphicsPath path = Shape.Rounded(rect, 18))
+            using (SolidBrush brush = new SolidBrush(_surface))
+            using (Pen pen = new Pen(_line))
+            {
+                e.Graphics.FillPath(brush, path);
+                e.Graphics.DrawPath(pen, path);
+            }
+        }
+    }
+
+    internal sealed class ClearEntriesDialog : Form
+    {
+        private readonly Color _line;
+        private readonly Color _surface;
+
+        public ClearEntriesDialog(Font baseFont, Color text, Color muted, Color purple, Color line)
+        {
+            _line = line;
+            _surface = Color.FromArgb(243, 248, 255);
+
+            Text = "목록 비우기";
+            ClientSize = new Size(244, 132);
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.CenterParent;
+            ShowInTaskbar = false;
+            BackColor = _surface;
+            Font = baseFont;
+            Padding = new Padding(1);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+
+            var close = new Label();
+            close.Text = "×";
+            close.AutoSize = false;
+            close.TextAlign = ContentAlignment.MiddleCenter;
+            close.ForeColor = muted;
+            close.Font = UiFont.Make(11f, FontStyle.Regular);
+            close.Cursor = Cursors.Hand;
+            close.SetBounds(ClientSize.Width - 34, 10, 24, 24);
             close.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(close);
 
@@ -3058,26 +4348,26 @@ namespace SoopPinballCollector
             title.AutoSize = false;
             title.BackColor = Color.Transparent;
             title.ForeColor = text;
-            title.Font = UiFont.Make(13.2f, FontStyle.Bold);
-            title.SetBounds(24, 22, 250, 28);
+            title.Font = UiFont.Make(12.2f, FontStyle.Bold);
+            title.SetBounds(18, 13, 180, 26);
             Controls.Add(title);
 
             var body = new Label();
             body.Text = "목록과 핀볼 입력값이 함께 비워집니다.";
             body.AutoSize = false;
             body.BackColor = Color.Transparent;
-            body.ForeColor = Color.FromArgb(79, 90, 118);
-            body.Font = UiFont.Make(9.1f, FontStyle.Regular);
-            body.SetBounds(24, 52, 276, 34);
+            body.ForeColor = Color.FromArgb(68, 83, 116);
+            body.Font = UiFont.Make(8.9f, FontStyle.Regular);
+            body.SetBounds(18, 40, 216, 25);
             Controls.Add(body);
 
-            var cancel = DialogButton("취소", muted, Color.White, line);
-            cancel.SetBounds(142, 98, 82, 36);
+            var cancel = DialogButton("취소", Color.FromArgb(49, 67, 104), Color.White, Color.FromArgb(158, 190, 238));
+            cancel.SetBounds(82, 82, 68, 34);
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(cancel);
 
             var clear = DialogButton("비우기", Color.White, purple, purple);
-            clear.SetBounds(234, 98, 78, 36);
+            clear.SetBounds(158, 82, 68, 34);
             clear.Click += delegate { DialogResult = DialogResult.OK; Close(); };
             Controls.Add(clear);
 
@@ -3131,10 +4421,10 @@ namespace SoopPinballCollector
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            Rectangle rect = new Rectangle(1, 1, Width - 3, Height - 3);
             using (GraphicsPath path = Shape.Rounded(rect, 18))
             using (SolidBrush brush = new SolidBrush(_surface))
-            using (Pen pen = new Pen(_line))
+            using (Pen pen = new Pen(Color.FromArgb(137, 177, 235)))
             {
                 e.Graphics.FillPath(brush, path);
                 e.Graphics.DrawPath(pen, path);
@@ -3226,10 +4516,36 @@ namespace SoopPinballCollector
 
     internal sealed class VerticalScrollPanel : Panel
     {
-        private const int SB_HORZ = 0;
+        private const int ScrollBarInset = 14;
+        private const int ThumbWidth = 7;
+        private const int MinimumThumbHeight = 32;
+        private readonly Color _thumbColor = Color.FromArgb(184, 190, 200);
+        private readonly Color _thumbHoverColor = Color.FromArgb(159, 169, 184);
+        private readonly Color _thumbDragColor = Color.FromArgb(126, 137, 154);
+        private int _contentHeight;
+        private int _scrollOffset;
+        private int _wheelRemainder;
+        private bool _thumbHot;
+        private bool _dragging;
+        private int _dragStartY;
+        private int _dragStartOffset;
 
-        [DllImport("user32.dll")]
-        private static extern bool ShowScrollBar(IntPtr hWnd, int wBar, bool bShow);
+        public event EventHandler ScrollOffsetChanged;
+
+        public int ContentWidth
+        {
+            get { return Math.Max(1, ClientSize.Width - (HasScrollBar ? ScrollBarInset : 0)); }
+        }
+
+        public int ScrollOffset
+        {
+            get { return _scrollOffset; }
+        }
+
+        public bool HasScrollBar
+        {
+            get { return _contentHeight > ClientSize.Height && ClientSize.Height > 0; }
+        }
 
         public VerticalScrollPanel()
         {
@@ -3240,38 +4556,206 @@ namespace SoopPinballCollector
                 ControlStyles.UserPaint,
                 true);
             DoubleBuffered = true;
-            AutoScroll = true;
+            AutoScroll = false;
+            TabStop = false;
         }
 
-        protected override void OnLayout(LayoutEventArgs levent)
+        public void SetContentHeight(int contentHeight)
         {
-            base.OnLayout(levent);
-            HideHorizontalScroll();
+            int nextHeight = Math.Max(0, contentHeight);
+            if (_contentHeight == nextHeight)
+            {
+                SetScrollOffset(_scrollOffset);
+                return;
+            }
+
+            _contentHeight = nextHeight;
+            SetScrollOffset(_scrollOffset);
+            Invalidate();
+        }
+
+        public void ScrollTo(int offset)
+        {
+            SetScrollOffset(offset);
+        }
+
+        public void ScrollToBottom()
+        {
+            SetScrollOffset(MaxScrollOffset);
+        }
+
+        public void ScrollByWheel(int delta)
+        {
+            if (!HasScrollBar || delta == 0)
+            {
+                return;
+            }
+
+            _wheelRemainder += delta;
+            int detents = _wheelRemainder / SystemInformation.MouseWheelScrollDelta;
+            if (detents == 0)
+            {
+                return;
+            }
+
+            _wheelRemainder -= detents * SystemInformation.MouseWheelScrollDelta;
+            SetScrollOffset(_scrollOffset - (detents * EntryRowControl.RowHeight));
+        }
+
+        private int MaxScrollOffset
+        {
+            get { return Math.Max(0, _contentHeight - ClientSize.Height); }
+        }
+
+        private void SetScrollOffset(int offset)
+        {
+            int clamped = Math.Max(0, Math.Min(MaxScrollOffset, offset));
+            if (_scrollOffset == clamped)
+            {
+                return;
+            }
+
+            _scrollOffset = clamped;
+            Invalidate(new Rectangle(Math.Max(0, Width - ScrollBarInset), 0, ScrollBarInset, Height));
+            if (ScrollOffsetChanged != null)
+            {
+                ScrollOffsetChanged(this, EventArgs.Empty);
+            }
         }
 
         protected override void OnResize(EventArgs eventargs)
         {
             base.OnResize(eventargs);
-            HideHorizontalScroll();
+            SetScrollOffset(_scrollOffset);
         }
 
-        protected override void WndProc(ref Message m)
+        protected override void OnMouseWheel(MouseEventArgs e)
         {
-            base.WndProc(ref m);
-            if (m.Msg == 0x5 || m.Msg == 0xf || m.Msg == 0x85)
+            ScrollByWheel(e.Delta);
+            base.OnMouseWheel(e);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left && HasScrollBar && e.X >= Width - ScrollBarInset)
             {
-                HideHorizontalScroll();
+                Rectangle thumb = GetThumbBounds();
+                if (thumb.Contains(e.Location))
+                {
+                    _dragging = true;
+                    _dragStartY = e.Y;
+                    _dragStartOffset = _scrollOffset;
+                    Capture = true;
+                }
+                else
+                {
+                    int page = Math.Max(EntryRowControl.RowHeight, ClientSize.Height - EntryRowControl.RowHeight);
+                    SetScrollOffset(_scrollOffset + (e.Y < thumb.Top ? -page : page));
+                }
+
+                Invalidate();
+            }
+
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (_dragging)
+            {
+                Rectangle track = GetTrackBounds();
+                Rectangle thumb = GetThumbBounds();
+                int travel = Math.Max(1, track.Height - thumb.Height);
+                int offset = _dragStartOffset + ((e.Y - _dragStartY) * MaxScrollOffset / travel);
+                SetScrollOffset(offset);
+            }
+
+            bool hot = HasScrollBar && GetThumbBounds().Contains(e.Location);
+            if (_thumbHot != hot)
+            {
+                _thumbHot = hot;
+                Invalidate();
+            }
+
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (_dragging)
+            {
+                _dragging = false;
+                Capture = false;
+                Invalidate();
+            }
+
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            if (!_dragging && _thumbHot)
+            {
+                _thumbHot = false;
+                Invalidate();
+            }
+
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseCaptureChanged(EventArgs e)
+        {
+            if (!Capture && _dragging)
+            {
+                _dragging = false;
+                Invalidate();
+            }
+
+            base.OnMouseCaptureChanged(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (!HasScrollBar)
+            {
+                return;
+            }
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle thumb = GetThumbBounds();
+            Color color = _dragging ? _thumbDragColor : (_thumbHot ? _thumbHoverColor : _thumbColor);
+            using (GraphicsPath path = Shape.Rounded(thumb, 3))
+            using (var brush = new SolidBrush(color))
+            {
+                e.Graphics.FillPath(brush, path);
             }
         }
 
-        private void HideHorizontalScroll()
+        private Rectangle GetTrackBounds()
         {
-            HorizontalScroll.Enabled = false;
-            HorizontalScroll.Maximum = 0;
-            if (IsHandleCreated)
+            return new Rectangle(Math.Max(0, Width - ScrollBarInset), 4, ScrollBarInset, Math.Max(1, Height - 8));
+        }
+
+        private Rectangle GetThumbBounds()
+        {
+            if (!HasScrollBar)
             {
-                ShowScrollBar(Handle, SB_HORZ, false);
+                return Rectangle.Empty;
             }
+
+            Rectangle track = GetTrackBounds();
+            int thumbHeight = Math.Min(
+                track.Height,
+                Math.Max(MinimumThumbHeight, (int)Math.Round(track.Height * ((double)ClientSize.Height / Math.Max(1, _contentHeight)))));
+            int travel = Math.Max(0, track.Height - thumbHeight);
+            int thumbY = track.Y;
+            if (MaxScrollOffset > 0)
+            {
+                thumbY += (int)Math.Round(travel * ((double)_scrollOffset / MaxScrollOffset));
+            }
+
+            return new Rectangle(Width - ThumbWidth - 2, thumbY, ThumbWidth, thumbHeight);
         }
     }
 
@@ -3552,6 +5036,15 @@ namespace SoopPinballCollector
         }
     }
 
+    internal enum ButtonGlyph
+    {
+        None,
+        Flask,
+        Trash,
+        Play,
+        Stop
+    }
+
     internal sealed class RoundButton : Control
     {
         private bool _hover;
@@ -3563,6 +5056,7 @@ namespace SoopPinballCollector
         public Color GradientColor { get; set; }
         public Color CanvasColor { get; set; }
         public bool UseGradient { get; set; }
+        public ButtonGlyph Glyph { get; set; }
 
         public RoundButton()
         {
@@ -3572,6 +5066,7 @@ namespace SoopPinballCollector
             GradientColor = Color.Empty;
             CanvasColor = Color.White;
             UseGradient = false;
+            Glyph = ButtonGlyph.None;
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer |
@@ -3658,19 +5153,121 @@ namespace SoopPinballCollector
                 e.Graphics.DrawPath(pen, path);
             }
 
-            DrawCenteredButtonText(e.Graphics, rect);
+            DrawCenteredButtonContent(e.Graphics, rect);
         }
 
-        private void DrawCenteredButtonText(Graphics graphics, Rectangle rect)
+        private void DrawCenteredButtonContent(Graphics graphics, Rectangle rect)
         {
-            Rectangle textRect = new Rectangle(rect.X + 2, rect.Y, Math.Max(1, rect.Width - 4), rect.Height);
+            string text = Text ?? "";
+            Size textSize = TextRenderer.MeasureText(
+                graphics,
+                text,
+                Font,
+                Size.Empty,
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            int iconSize = Glyph == ButtonGlyph.None ? 0 : ((Glyph == ButtonGlyph.Play || Glyph == ButtonGlyph.Stop) ? 18 : 16);
+            int gap = iconSize > 0 && text.Length > 0 ? 7 : 0;
+            int contentWidth = Math.Min(rect.Width - 6, iconSize + gap + textSize.Width);
+            int startX = rect.X + Math.Max(3, (rect.Width - contentWidth) / 2);
+
+            if (iconSize > 0)
+            {
+                int iconOffsetY = Glyph == ButtonGlyph.Flask || Glyph == ButtonGlyph.Trash ? 1 : 0;
+                DrawGlyph(graphics, new Rectangle(startX, rect.Y + ((rect.Height - iconSize) / 2) + iconOffsetY, iconSize, iconSize));
+            }
+
+            Rectangle textRect = new Rectangle(startX + iconSize + gap, rect.Y, Math.Max(1, contentWidth - iconSize - gap), rect.Height);
             TextRenderer.DrawText(
                 graphics,
-                Text ?? "",
+                text,
                 Font,
                 textRect,
                 ForeColor,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+        }
+
+        private void DrawGlyph(Graphics graphics, Rectangle bounds)
+        {
+            Func<float, float, PointF> point = delegate(float x, float y)
+            {
+                return new PointF(
+                    bounds.X + (x * bounds.Width / 24f),
+                    bounds.Y + (y * bounds.Height / 24f));
+            };
+
+            using (var pen = new Pen(ForeColor, Math.Max(1.5f, bounds.Width * 0.095f)))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                pen.LineJoin = LineJoin.Round;
+
+                if (Glyph == ButtonGlyph.Flask)
+                {
+                    graphics.DrawLine(pen, point(8.5f, 2f), point(15.5f, 2f));
+                    using (var path = new GraphicsPath())
+                    {
+                        path.AddLine(point(10f, 2f), point(10f, 8.5f));
+                        path.AddLine(point(10f, 8.5f), point(5.97f, 15.58f));
+                        path.AddBezier(
+                            point(5.97f, 15.58f),
+                            point(3.94f, 19.14f),
+                            point(6.42f, 21f),
+                            point(9.45f, 21f));
+                        path.AddLine(point(9.45f, 21f), point(14.55f, 21f));
+                        path.AddBezier(
+                            point(14.55f, 21f),
+                            point(17.58f, 21f),
+                            point(20.06f, 19.14f),
+                            point(18.03f, 15.58f));
+                        path.AddLine(point(18.03f, 15.58f), point(14f, 8.5f));
+                        path.AddLine(point(14f, 8.5f), point(14f, 2f));
+                        graphics.DrawPath(pen, path);
+                    }
+                    graphics.DrawLine(pen, point(7f, 16f), point(17f, 16f));
+                }
+                else if (Glyph == ButtonGlyph.Trash)
+                {
+                    graphics.DrawLine(pen, point(3f, 6f), point(21f, 6f));
+                    graphics.DrawLine(pen, point(8f, 6f), point(8f, 4f));
+                    graphics.DrawBezier(pen, point(8f, 4f), point(8f, 2.9f), point(8.9f, 2f), point(10f, 2f));
+                    graphics.DrawLine(pen, point(10f, 2f), point(14f, 2f));
+                    graphics.DrawBezier(pen, point(14f, 2f), point(15.1f, 2f), point(16f, 2.9f), point(16f, 4f));
+                    graphics.DrawLine(pen, point(16f, 4f), point(16f, 6f));
+                    using (var path = new GraphicsPath())
+                    {
+                        path.AddLine(point(19f, 6f), point(18f, 20f));
+                        path.AddBezier(point(18f, 20f), point(17.92f, 21.1f), point(17.1f, 22f), point(16f, 22f));
+                        path.AddLine(point(16f, 22f), point(8f, 22f));
+                        path.AddBezier(point(8f, 22f), point(6.9f, 22f), point(6.08f, 21.1f), point(6f, 20f));
+                        path.AddLine(point(6f, 20f), point(5f, 6f));
+                        graphics.DrawPath(pen, path);
+                    }
+                    graphics.DrawLine(pen, point(10f, 11f), point(10f, 17f));
+                    graphics.DrawLine(pen, point(14f, 11f), point(14f, 17f));
+                }
+                else if (Glyph == ButtonGlyph.Play)
+                {
+                    using (var brush = new SolidBrush(ForeColor))
+                    using (var path = new GraphicsPath())
+                    {
+                        path.AddPolygon(new[] { point(5f, 3f), point(21f, 12f), point(5f, 21f) });
+                        graphics.FillPath(brush, path);
+                    }
+                }
+                else if (Glyph == ButtonGlyph.Stop)
+                {
+                    Rectangle stopRect = Rectangle.Round(new RectangleF(
+                        point(5f, 5f).X,
+                        point(5f, 5f).Y,
+                        bounds.Width * 14f / 24f,
+                        bounds.Height * 14f / 24f));
+                    using (var brush = new SolidBrush(ForeColor))
+                    using (GraphicsPath path = Shape.Rounded(stopRect, 2))
+                    {
+                        graphics.FillPath(brush, path);
+                    }
+                }
+            }
         }
 
         private static Color Shift(Color color, int amount)
@@ -3687,7 +5284,11 @@ namespace SoopPinballCollector
     internal class RoundTextBox : UserControl
     {
         private const int EM_GETFIRSTVISIBLELINE = 0x00CE;
+        private const int EM_GETLINECOUNT = 0x00BA;
         private const int EM_LINESCROLL = 0x00B6;
+        private const int TextScrollBarInset = 17;
+        private const int TextScrollThumbWidth = 7;
+        private const int TextScrollThumbMinimumHeight = 32;
 
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
@@ -3695,6 +5296,10 @@ namespace SoopPinballCollector
         private readonly TextBox _box;
         private bool _placeholderActive;
         private string _suffixText;
+        private bool _textScrollThumbHot;
+        private bool _textScrollDragging;
+        private int _textScrollDragStartY;
+        private int _textScrollDragStartLine;
 
         public event EventHandler InnerTextChanged;
 
@@ -3722,8 +5327,9 @@ namespace SoopPinballCollector
             set
             {
                 _box.Multiline = value;
-                _box.ScrollBars = value ? ScrollBars.Vertical : ScrollBars.None;
+                _box.ScrollBars = ScrollBars.None;
                 LayoutInner();
+                QueueTextScrollRefresh();
             }
         }
 
@@ -3772,6 +5378,7 @@ namespace SoopPinballCollector
                 _box.Focus();
             }
             ApplyPlaceholder();
+            QueueTextScrollRefresh();
         }
 
         public void SetTextScrollToBottom(string value)
@@ -3797,6 +5404,7 @@ namespace SoopPinballCollector
                 _box.Focus();
             }
             ApplyPlaceholder();
+            QueueTextScrollRefresh();
         }
 
         public RoundTextBox()
@@ -3822,6 +5430,7 @@ namespace SoopPinballCollector
                 {
                     InnerTextChanged(this, EventArgs.Empty);
                 }
+                QueueTextScrollRefresh();
             };
             _box.GotFocus += delegate
             {
@@ -3838,6 +5447,20 @@ namespace SoopPinballCollector
                 ApplyPlaceholder();
                 Invalidate();
             };
+            _box.MouseWheel += delegate(object sender, MouseEventArgs e)
+            {
+                int lines = SystemInformation.MouseWheelScrollLines;
+                int step = lines < 0 ? Math.Max(1, GetVisibleLineCount() - 1) : Math.Max(1, lines);
+                ScrollTextToLine(GetFirstVisibleLine() - (Math.Sign(e.Delta) * step));
+                HandledMouseEventArgs handled = e as HandledMouseEventArgs;
+                if (handled != null)
+                {
+                    handled.Handled = true;
+                }
+                QueueTextScrollRefresh();
+            };
+            _box.KeyUp += delegate { QueueTextScrollRefresh(); };
+            _box.MouseUp += delegate { QueueTextScrollRefresh(); };
             Controls.Add(_box);
 
             Resize += delegate { LayoutInner(); };
@@ -3855,7 +5478,7 @@ namespace SoopPinballCollector
             if (!Focused && !_box.Focused && _box.Text.Length == 0 && Placeholder.Length > 0)
             {
                 _placeholderActive = true;
-                _box.ForeColor = Color.FromArgb(124, 140, 174);
+                _box.ForeColor = Color.FromArgb(96, 114, 151);
                 _box.Text = Placeholder;
             }
         }
@@ -3865,8 +5488,10 @@ namespace SoopPinballCollector
             int padX = 13;
             int padY = _box.Multiline ? 11 : Math.Max(6, (Height - _box.Font.Height) / 2);
             int suffixReserve = GetSuffixReserve();
+            int scrollReserve = _box.Multiline ? TextScrollBarInset : 0;
             _box.BackColor = FillColor;
-            _box.SetBounds(padX, padY, Math.Max(1, Width - (padX * 2) - suffixReserve), Math.Max(1, Height - (padY * 2)));
+            _box.SetBounds(padX, padY, Math.Max(1, Width - (padX * 2) - suffixReserve - scrollReserve), Math.Max(1, Height - (padY * 2)));
+            QueueTextScrollRefresh();
         }
 
         private int GetSuffixReserve()
@@ -3903,6 +5528,204 @@ namespace SoopPinballCollector
                 Rectangle suffixRect = new Rectangle(Width - padX - suffixReserve, 0, suffixReserve, Height - 1);
                 TextRenderer.DrawText(e.Graphics, _suffixText, _box.Font, suffixRect, SuffixColor, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             }
+
+            DrawTextScrollBar(e.Graphics);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left && HasTextScrollBar && e.X >= Width - TextScrollBarInset)
+            {
+                Rectangle thumb = GetTextScrollThumbBounds();
+                if (thumb.Contains(e.Location))
+                {
+                    _textScrollDragging = true;
+                    _textScrollDragStartY = e.Y;
+                    _textScrollDragStartLine = GetFirstVisibleLine();
+                    Capture = true;
+                }
+                else
+                {
+                    int page = Math.Max(1, GetVisibleLineCount() - 1);
+                    ScrollTextToLine(GetFirstVisibleLine() + (e.Y < thumb.Top ? -page : page));
+                }
+
+                _box.Focus();
+                Invalidate();
+            }
+
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (_textScrollDragging)
+            {
+                Rectangle track = GetTextScrollTrackBounds();
+                Rectangle thumb = GetTextScrollThumbBounds();
+                int travel = Math.Max(1, track.Height - thumb.Height);
+                int line = _textScrollDragStartLine + ((e.Y - _textScrollDragStartY) * GetMaximumFirstVisibleLine() / travel);
+                ScrollTextToLine(line);
+            }
+
+            bool hot = HasTextScrollBar && GetTextScrollThumbBounds().Contains(e.Location);
+            if (_textScrollThumbHot != hot)
+            {
+                _textScrollThumbHot = hot;
+                Invalidate();
+            }
+
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (_textScrollDragging)
+            {
+                _textScrollDragging = false;
+                Capture = false;
+                Invalidate();
+            }
+
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            if (!_textScrollDragging && _textScrollThumbHot)
+            {
+                _textScrollThumbHot = false;
+                Invalidate();
+            }
+
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseCaptureChanged(EventArgs e)
+        {
+            if (!Capture && _textScrollDragging)
+            {
+                _textScrollDragging = false;
+                Invalidate();
+            }
+
+            base.OnMouseCaptureChanged(e);
+        }
+
+        private bool HasTextScrollBar
+        {
+            get { return _box.Multiline && GetMaximumFirstVisibleLine() > 0; }
+        }
+
+        private int GetFirstVisibleLine()
+        {
+            if (!_box.IsHandleCreated)
+            {
+                return 0;
+            }
+
+            return Math.Max(0, SendMessage(_box.Handle, EM_GETFIRSTVISIBLELINE, IntPtr.Zero, IntPtr.Zero).ToInt32());
+        }
+
+        private int GetTextLineCount()
+        {
+            if (!_box.IsHandleCreated)
+            {
+                return Math.Max(1, (_box.Text ?? "").Split('\n').Length);
+            }
+
+            return Math.Max(1, SendMessage(_box.Handle, EM_GETLINECOUNT, IntPtr.Zero, IntPtr.Zero).ToInt32());
+        }
+
+        private int GetVisibleLineCount()
+        {
+            return Math.Max(1, _box.ClientSize.Height / Math.Max(1, _box.Font.Height));
+        }
+
+        private int GetMaximumFirstVisibleLine()
+        {
+            return Math.Max(0, GetTextLineCount() - GetVisibleLineCount());
+        }
+
+        private void ScrollTextToLine(int line)
+        {
+            if (!_box.IsHandleCreated)
+            {
+                return;
+            }
+
+            int target = Math.Max(0, Math.Min(GetMaximumFirstVisibleLine(), line));
+            int current = GetFirstVisibleLine();
+            if (target != current)
+            {
+                SendMessage(_box.Handle, EM_LINESCROLL, IntPtr.Zero, new IntPtr(target - current));
+            }
+            Invalidate();
+        }
+
+        private Rectangle GetTextScrollTrackBounds()
+        {
+            int top = 10;
+            return new Rectangle(Width - TextScrollThumbWidth - 5, top, TextScrollThumbWidth, Math.Max(1, Height - (top * 2)));
+        }
+
+        private Rectangle GetTextScrollThumbBounds()
+        {
+            if (!HasTextScrollBar)
+            {
+                return Rectangle.Empty;
+            }
+
+            Rectangle track = GetTextScrollTrackBounds();
+            int lineCount = GetTextLineCount();
+            int visibleLines = GetVisibleLineCount();
+            int thumbHeight = Math.Min(
+                track.Height,
+                Math.Max(TextScrollThumbMinimumHeight, (int)Math.Round(track.Height * ((double)visibleLines / Math.Max(1, lineCount)))));
+            int travel = Math.Max(0, track.Height - thumbHeight);
+            int maximum = GetMaximumFirstVisibleLine();
+            int top = track.Top;
+            if (maximum > 0)
+            {
+                top += (int)Math.Round(travel * ((double)Math.Min(maximum, GetFirstVisibleLine()) / maximum));
+            }
+
+            return new Rectangle(track.X, top, TextScrollThumbWidth, thumbHeight);
+        }
+
+        private void DrawTextScrollBar(Graphics graphics)
+        {
+            if (!HasTextScrollBar)
+            {
+                return;
+            }
+
+            Rectangle thumb = GetTextScrollThumbBounds();
+            Color color = _textScrollDragging
+                ? Color.FromArgb(126, 137, 154)
+                : (_textScrollThumbHot ? Color.FromArgb(159, 169, 184) : Color.FromArgb(184, 190, 200));
+            using (GraphicsPath path = Shape.Rounded(thumb, 3))
+            using (var brush = new SolidBrush(color))
+            {
+                graphics.FillPath(brush, path);
+            }
+        }
+
+        private void QueueTextScrollRefresh()
+        {
+            Invalidate();
+            if (!IsHandleCreated || IsDisposed)
+            {
+                return;
+            }
+
+            BeginInvoke((MethodInvoker)delegate
+            {
+                if (!IsDisposed)
+                {
+                    Invalidate();
+                }
+            });
         }
     }
 
@@ -3972,6 +5795,7 @@ namespace SoopPinballCollector
 
     internal sealed class PendingGift
     {
+        public GiftSource Source { get; set; }
         public string Nickname { get; set; }
         public int BalloonCount { get; set; }
         public int CoinCount { get; set; }
@@ -3980,10 +5804,36 @@ namespace SoopPinballCollector
 
     internal sealed class CollectedEntry
     {
+        public GiftSource Source { get; set; }
         public string Nickname { get; set; }
         public int BalloonCount { get; set; }
         public int CoinCount { get; set; }
         public string PinballName { get; set; }
         public string ReceivedAt { get; set; }
+    }
+
+    internal enum GiftSource
+    {
+        StarBalloon,
+        AdBalloon,
+        ChallengeGift
+    }
+
+    internal static class GiftSourceInfo
+    {
+        public static string GetLabel(GiftSource source)
+        {
+            if (source == GiftSource.AdBalloon)
+            {
+                return "애드벌룬";
+            }
+
+            if (source == GiftSource.ChallengeGift)
+            {
+                return "도전미션";
+            }
+
+            return "별풍선";
+        }
     }
 }

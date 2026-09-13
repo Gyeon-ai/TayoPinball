@@ -199,7 +199,6 @@ namespace SoopPinballCollector
         private bool _collectStarBalloon = true;
         private bool _collectAdBalloon = true;
         private bool _collectChallengeGift = true;
-        private bool _capturingTargetPopupBackdrop;
         private int _reconnectAttempt;
 
         public MainForm()
@@ -883,44 +882,12 @@ namespace SoopPinballCollector
             }
 
             _targetPopup.Location = new Point(popupX, popupY);
+            Point collectionLeft = PointToClient(_collectionCard.PointToScreen(Point.Empty));
+            int backdropSplitX = Math.Max(0, Math.Min(_targetPopup.Width, collectionLeft.X - popupX));
+            _targetPopup.SetBackdrop(backdropSplitX, Color.FromArgb(6, 19, 43), _card);
             if (_targetPopup.Visible)
             {
-                RefreshTargetPopupBackdrop();
                 _targetPopup.BringToFront();
-            }
-        }
-
-        private void RefreshTargetPopupBackdrop()
-        {
-            if (_capturingTargetPopupBackdrop || _targetPopup == null || _surface == null ||
-                _surface.Width <= 0 || _surface.Height <= 0)
-            {
-                return;
-            }
-
-            _capturingTargetPopupBackdrop = true;
-            try
-            {
-                using (var surfaceBitmap = new Bitmap(_surface.Width, _surface.Height, PixelFormat.Format32bppPArgb))
-                using (var backdrop = new Bitmap(_targetPopup.Width, _targetPopup.Height, PixelFormat.Format32bppPArgb))
-                {
-                    _surface.DrawToBitmap(surfaceBitmap, _surface.ClientRectangle);
-                    Point popupOnSurface = _surface.PointToClient(PointToScreen(_targetPopup.Location));
-                    using (Graphics graphics = Graphics.FromImage(backdrop))
-                    {
-                        graphics.CompositingMode = CompositingMode.SourceCopy;
-                        graphics.DrawImage(
-                            surfaceBitmap,
-                            new Rectangle(Point.Empty, backdrop.Size),
-                            new Rectangle(popupOnSurface, backdrop.Size),
-                            GraphicsUnit.Pixel);
-                    }
-                    _targetPopup.SetBackdropImage(backdrop);
-                }
-            }
-            finally
-            {
-                _capturingTargetPopupBackdrop = false;
             }
         }
 
@@ -2128,7 +2095,6 @@ namespace SoopPinballCollector
         {
             _targetPopup.SetSelections(_collectStarBalloon, _collectAdBalloon, _collectChallengeGift);
             LayoutTargetPopup();
-            RefreshTargetPopupBackdrop();
             _targetPopup.Visible = true;
             _targetPopup.BringToFront();
             RefreshTargetButton();
@@ -3286,7 +3252,6 @@ namespace SoopPinballCollector
         private int _backdropSplitX;
         private Color _leftBackdropColor;
         private Color _rightBackdropColor;
-        private Bitmap _backdropImage;
         private readonly GiftSourceOption _starBalloon;
         private readonly GiftSourceOption _adBalloon;
         private readonly GiftSourceOption _challengeGift;
@@ -3369,18 +3334,6 @@ namespace SoopPinballCollector
             Invalidate();
         }
 
-        public void SetBackdropImage(Bitmap image)
-        {
-            Bitmap nextBackdrop = image == null ? null : new Bitmap(image);
-            Bitmap previousBackdrop = _backdropImage;
-            _backdropImage = nextBackdrop;
-            if (previousBackdrop != null)
-            {
-                previousBackdrop.Dispose();
-            }
-            Invalidate();
-        }
-
         private GiftSourceOption CreateOption(string text, int x, int y, int width, int height, bool isChecked, Color foreColor, Color accent)
         {
             var option = new GiftSourceOption();
@@ -3422,12 +3375,6 @@ namespace SoopPinballCollector
 
         protected override void OnPaintBackground(PaintEventArgs e)
         {
-            if (_backdropImage != null && _backdropImage.Size == ClientSize)
-            {
-                e.Graphics.DrawImageUnscaled(_backdropImage, Point.Empty);
-                return;
-            }
-
             if (_backdropSplitX > 0)
             {
                 using (var leftBrush = new SolidBrush(_leftBackdropColor))
@@ -3489,15 +3436,6 @@ namespace SoopPinballCollector
             }
         }
 
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing && _backdropImage != null)
-            {
-                _backdropImage.Dispose();
-                _backdropImage = null;
-            }
-            base.Dispose(disposing);
-        }
     }
 
     internal sealed class PopupDismissMessageFilter : IMessageFilter

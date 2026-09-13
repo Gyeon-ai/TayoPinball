@@ -199,6 +199,7 @@ namespace SoopPinballCollector
         private bool _collectStarBalloon = true;
         private bool _collectAdBalloon = true;
         private bool _collectChallengeGift = true;
+        private bool _targetPopupBackdropReady;
         private int _reconnectAttempt;
 
         public MainForm()
@@ -471,6 +472,15 @@ namespace SoopPinballCollector
             _setupCard.Controls.Add(_thresholdInput);
 
             _targetButton = SegmentButton("수집 대상 3/3 ▶");
+            _targetButton.MouseDown += delegate
+            {
+                if (_targetPopup != null && !_targetPopup.Visible)
+                {
+                    _targetPopupBackdropReady = false;
+                    LayoutTargetPopup();
+                    RefreshTargetPopupBackdrop();
+                }
+            };
             _targetButton.Click += delegate { ToggleTargetPopup(); };
             _setupCard.Controls.Add(_targetButton);
 
@@ -881,13 +891,53 @@ namespace SoopPinballCollector
                 popupY = Math.Max(12, anchor.Y - _targetPopup.Height - 6);
             }
 
-            _targetPopup.Location = new Point(popupX, popupY);
+            Point popupLocation = new Point(popupX, popupY);
+            if (_targetPopup.Location != popupLocation)
+            {
+                _targetPopupBackdropReady = false;
+                _targetPopup.Location = popupLocation;
+            }
             Point collectionLeft = PointToClient(_collectionCard.PointToScreen(Point.Empty));
             int backdropSplitX = Math.Max(0, Math.Min(_targetPopup.Width, collectionLeft.X - popupX));
             _targetPopup.SetBackdrop(backdropSplitX, Color.FromArgb(6, 19, 43), _card);
             if (_targetPopup.Visible)
             {
                 _targetPopup.BringToFront();
+            }
+        }
+
+        private void RefreshTargetPopupBackdrop()
+        {
+            if (_targetPopup == null || _targetPopup.Visible || !IsHandleCreated ||
+                _targetPopup.Width <= 0 || _targetPopup.Height <= 0)
+            {
+                return;
+            }
+
+            try
+            {
+                using (var backdrop = new Bitmap(_targetPopup.Width, _targetPopup.Height, PixelFormat.Format32bppPArgb))
+                using (Graphics graphics = Graphics.FromImage(backdrop))
+                {
+                    Point popupOnScreen = PointToScreen(_targetPopup.Location);
+                    graphics.CopyFromScreen(
+                        popupOnScreen.X,
+                        popupOnScreen.Y,
+                        0,
+                        0,
+                        backdrop.Size,
+                        CopyPixelOperation.SourceCopy);
+                    _targetPopup.SetBackdropImage(backdrop);
+                    _targetPopupBackdropReady = true;
+                }
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                _targetPopupBackdropReady = false;
+            }
+            catch (ExternalException)
+            {
+                _targetPopupBackdropReady = false;
             }
         }
 
@@ -2095,6 +2145,10 @@ namespace SoopPinballCollector
         {
             _targetPopup.SetSelections(_collectStarBalloon, _collectAdBalloon, _collectChallengeGift);
             LayoutTargetPopup();
+            if (!_targetPopupBackdropReady)
+            {
+                RefreshTargetPopupBackdrop();
+            }
             _targetPopup.Visible = true;
             _targetPopup.BringToFront();
             RefreshTargetButton();
@@ -3252,6 +3306,8 @@ namespace SoopPinballCollector
         private int _backdropSplitX;
         private Color _leftBackdropColor;
         private Color _rightBackdropColor;
+        private Bitmap _backdropImage;
+        private Bitmap _chromeImage;
         private readonly GiftSourceOption _starBalloon;
         private readonly GiftSourceOption _adBalloon;
         private readonly GiftSourceOption _challengeGift;
@@ -3309,6 +3365,7 @@ namespace SoopPinballCollector
             Controls.Add(_adBalloon);
             Controls.Add(_challengeGift);
 
+            RebuildChromeImage();
         }
 
         public void SetSelections(bool starBalloon, bool adBalloon, bool challengeGift)
@@ -3331,6 +3388,18 @@ namespace SoopPinballCollector
             _backdropSplitX = nextSplitX;
             _leftBackdropColor = leftColor;
             _rightBackdropColor = rightColor;
+            Invalidate();
+        }
+
+        public void SetBackdropImage(Bitmap image)
+        {
+            Bitmap nextBackdrop = image == null ? null : new Bitmap(image);
+            Bitmap previousBackdrop = _backdropImage;
+            _backdropImage = nextBackdrop;
+            if (previousBackdrop != null)
+            {
+                previousBackdrop.Dispose();
+            }
             Invalidate();
         }
 
@@ -3375,6 +3444,12 @@ namespace SoopPinballCollector
 
         protected override void OnPaintBackground(PaintEventArgs e)
         {
+            if (_backdropImage != null && _backdropImage.Size == ClientSize)
+            {
+                e.Graphics.DrawImageUnscaled(_backdropImage, Point.Empty);
+                return;
+            }
+
             if (_backdropSplitX > 0)
             {
                 using (var leftBrush = new SolidBrush(_leftBackdropColor))
@@ -3391,6 +3466,29 @@ namespace SoopPinballCollector
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (Width <= 1 || Height <= 1)
+            {
+                return;
+            }
+
+            if (_chromeImage == null || _chromeImage.Size != ClientSize)
+            {
+                RebuildChromeImage();
+            }
+
+            if (_chromeImage != null)
+            {
+                e.Graphics.DrawImageUnscaled(_chromeImage, Point.Empty);
+            }
+        }
+
+        private void RebuildChromeImage()
+        {
+            if (_chromeImage != null)
+            {
+                _chromeImage.Dispose();
+                _chromeImage = null;
+            }
             if (Width <= 1 || Height <= 1)
             {
                 return;
@@ -3424,16 +3522,50 @@ namespace SoopPinballCollector
                     chromeGraphics.FillPath(fillBrush, innerPath);
                 }
 
-                e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
-                e.Graphics.CompositingMode = CompositingMode.SourceOver;
-                e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
-                e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                e.Graphics.DrawImage(
-                    chrome,
-                    new Rectangle(0, 0, Width, Height),
-                    new Rectangle(0, 0, renderWidth, renderHeight),
-                    GraphicsUnit.Pixel);
+                var cached = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
+                using (Graphics cachedGraphics = Graphics.FromImage(cached))
+                {
+                    cachedGraphics.Clear(Color.Transparent);
+                    cachedGraphics.CompositingQuality = CompositingQuality.HighQuality;
+                    cachedGraphics.CompositingMode = CompositingMode.SourceCopy;
+                    cachedGraphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                    cachedGraphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    cachedGraphics.DrawImage(
+                        chrome,
+                        new Rectangle(0, 0, Width, Height),
+                        new Rectangle(0, 0, renderWidth, renderHeight),
+                        GraphicsUnit.Pixel);
+                }
+                _chromeImage = cached;
             }
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            if (_chromeImage != null)
+            {
+                _chromeImage.Dispose();
+                _chromeImage = null;
+            }
+            base.OnSizeChanged(e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_backdropImage != null)
+                {
+                    _backdropImage.Dispose();
+                    _backdropImage = null;
+                }
+                if (_chromeImage != null)
+                {
+                    _chromeImage.Dispose();
+                    _chromeImage = null;
+                }
+            }
+            base.Dispose(disposing);
         }
 
     }
@@ -3611,6 +3743,7 @@ namespace SoopPinballCollector
     internal sealed class EntryRowControl : UserControl
     {
         public const int RowHeight = 40;
+        private const int NameHorizontalPadding = 10;
 
         private CollectedEntry _entry;
         private int _index;
@@ -3979,7 +4112,11 @@ namespace SoopPinballCollector
             _deleteLabel.SetBounds(Width - deleteW - 4, (RowHeight - 26) / 2, deleteW, 26);
             const int controlY = 5;
             _editFrame.SetBounds(editX, controlY, editW, 30);
-            _nameBox.SetBounds(editX + 8, controlY + 6, Math.Max(40, editW - 16), 18);
+            _nameBox.SetBounds(
+                editX + NameHorizontalPadding,
+                controlY + 6,
+                Math.Max(40, editW - (NameHorizontalPadding * 2)),
+                18);
             _metaLabel.SetBounds(metaX, controlY, metaW, 30);
             _coinFrame.SetBounds(coinX, controlY, coinW, 30);
             _coinBox.SetBounds(coinX + 5, controlY + 6, Math.Max(18, coinW - 10), 18);
@@ -4063,11 +4200,13 @@ namespace SoopPinballCollector
             }
             if (!_nameBox.Visible)
             {
+                Rectangle nameBounds = _editFrame.Bounds;
+                nameBounds.Inflate(-NameHorizontalPadding, 0);
                 TextRenderer.DrawText(
                     e.Graphics,
                     _entry.PinballName,
                     _nameBox.Font,
-                    _editFrame.Bounds,
+                    nameBounds,
                     _nameBox.ForeColor,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
             }

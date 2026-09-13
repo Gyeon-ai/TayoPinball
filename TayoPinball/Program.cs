@@ -3672,6 +3672,7 @@ namespace SoopPinballCollector
     internal sealed class EntryRowControl : UserControl
     {
         public const int RowHeight = 40;
+        private const int NameHorizontalPadding = 10;
 
         private CollectedEntry _entry;
         private int _index;
@@ -4040,7 +4041,11 @@ namespace SoopPinballCollector
             _deleteLabel.SetBounds(Width - deleteW - 4, (RowHeight - 26) / 2, deleteW, 26);
             const int controlY = 5;
             _editFrame.SetBounds(editX, controlY, editW, 30);
-            _nameBox.SetBounds(editX + 8, controlY + 6, Math.Max(40, editW - 16), 18);
+            _nameBox.SetBounds(
+                editX + NameHorizontalPadding,
+                controlY + 6,
+                Math.Max(40, editW - (NameHorizontalPadding * 2)),
+                18);
             _metaLabel.SetBounds(metaX, controlY, metaW, 30);
             _coinFrame.SetBounds(coinX, controlY, coinW, 30);
             _coinBox.SetBounds(coinX + 5, controlY + 6, Math.Max(18, coinW - 10), 18);
@@ -4124,11 +4129,13 @@ namespace SoopPinballCollector
             }
             if (!_nameBox.Visible)
             {
+                Rectangle nameBounds = _editFrame.Bounds;
+                nameBounds.Inflate(-NameHorizontalPadding, 0);
                 TextRenderer.DrawText(
                     e.Graphics,
                     _entry.PinballName,
                     _nameBox.Font,
-                    _editFrame.Bounds,
+                    nameBounds,
                     _nameBox.ForeColor,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
             }

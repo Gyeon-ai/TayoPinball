@@ -56,6 +56,50 @@ dist\Release\TayoPinball\TayoPinball-001.exe
 dist\Release\TayoPinballAuto\TayoPinballAuto-001.exe
 ```
 
+## Update Release
+
+최초 한 번 업데이트 서명키를 생성합니다. 개인키는 Git 저장소가 아닌 현재 Windows 사용자 계정의 DPAPI로 보호된 상태로 저장되고, 공개키만 저장소와 프로그램에 포함됩니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\New-UpdateSigningKey.ps1"
+```
+
+개인키 기본 경로는 `%LOCALAPPDATA%\Gyeona\TayoPinball\Signing\update-signing-key.dat`입니다. 이 파일을 잃으면 이미 배포된 프로그램에 새 자동 업데이트를 제공할 수 없으므로 안전한 별도 위치에 백업해야 합니다.
+
+다른 개발 컴퓨터에서도 같은 키로 배포하려면 개발자 전용 스크립트로 비밀번호가 설정된 휴대용 `.tayokey` 백업을 만듭니다. 이 백업은 특정 Windows 계정에 묶이지 않으며 비밀번호는 명령줄에 적지 않고 프롬프트에 직접 입력합니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\Export-UpdateSigningKey.ps1" -OutputPath "E:\TayoPinball-UpdateKey.tayokey"
+```
+
+새 개발 컴퓨터에서는 저장소를 받은 뒤 같은 `.tayokey` 파일을 가져옵니다. 스크립트는 백업의 공개키가 저장소의 `update-public-key.xml`과 정확히 일치할 때만 새 Windows 사용자 계정의 DPAPI로 개인키를 다시 보호합니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\Import-UpdateSigningKey.ps1" -InputPath "E:\TayoPinball-UpdateKey.tayokey"
+```
+
+`.tayokey` 파일과 비밀번호는 서로 다른 위치에 보관하며 백업 파일을 GitHub에 커밋하지 않습니다. 백업은 PBKDF2-HMAC-SHA256으로 키를 만들고 AES-256-CBC로 암호화한 뒤 HMAC-SHA256으로 변조를 검출합니다. 이 스크립트들은 개발자용 도구이며 방송 사용자에게 배포되는 EXE에는 포함되지 않습니다.
+
+자동 업데이트용 배포를 준비할 때는 다음 명령을 사용합니다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\Prepare-UpdateRelease.ps1" -ReleaseNotes "변경 내용"
+```
+
+이 스크립트는 일반판과 Auto의 네 번째 버전 숫자를 하나 올리고, 두 프로젝트를 Release로 빌드한 뒤 아래 항목을 함께 갱신합니다. 네 번째 숫자는 `0~9`를 사용하며 `1.4.4.9` 다음 버전은 `1.4.5.0`입니다.
+
+아직 배포하지 않은 버전을 키 교체 등의 이유로 다시 빌드·서명할 때만 `-RebuildCurrentVersion`을 사용합니다. 이미 배포한 버전에 이 옵션을 사용하면 실행 중인 프로그램이 새 파일을 업데이트로 인식하지 못하므로 사용하지 않습니다.
+
+- `타요의 종겜핀볼.exe`
+- `타요의 종겜핀볼(자동).exe`
+- `update.json`의 버전, 파일 크기, SHA256
+- `update.json.sig`의 RSA-SHA256 디지털 서명
+- README의 배포 파일 SHA256과 버전
+
+빌드나 파일 갱신에 실패하면 기존 버전과 배포 파일을 복구합니다. 스크립트는 Git 커밋이나 푸시를 실행하지 않으므로 결과를 검증한 후 별도로 배포해야 합니다.
+
+업데이트 기능이 포함된 버전을 사용자가 한 번 직접 설치하면 이후 실행부터 GitHub의 `update.json`을 백그라운드에서 확인합니다. 앱에 내장된 공개키로 매니페스트 서명을 먼저 확인하므로 GitHub의 EXE와 SHA256이 함께 변조돼도 업데이트를 거부합니다. 새 버전이 있으면 `업데이트 / 나중에` 창을 표시하며, 다운로드한 EXE의 제품명, 버전, 크기, SHA256을 모두 확인한 뒤 기존 파일을 교체합니다.
+
 ## Repository Layout
 
 ```text
@@ -69,13 +113,13 @@ TayoPinball.sln
 
 | File | SHA256 |
 |---|---|
-| `타요의 종겜핀볼.exe` | `653066A40DCB00A40F86D6D9998D552DEC52A9D0843A92CB109E1D6D02A69A54` |
-| `타요의 종겜핀볼(자동).exe` | `446C509545B2658CD0BE0070963A86A404EABCBBFB2614DB38D446E468A9C162` |
+| `타요의 종겜핀볼.exe` | `A4C8D461259A47FFFB1B2C7039F70059D0818F340ABB0A0DEFBBF7CBB574E3C3` |
+| `타요의 종겜핀볼(자동).exe` | `010AACA6D10E5E64A136F5F664AE4E5879EFA840AB824318280E5419A9931C59` |
 
 ## Version Info
 
 - Company: Gyeona
-- Version: 1.4.4.2
+- Version: 1.4.4.3
 - Target framework: .NET Framework 4.8
 
 ## Security Note

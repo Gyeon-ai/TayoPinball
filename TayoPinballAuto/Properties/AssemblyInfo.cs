@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("TayoPinballAuto")]
@@ -10,6 +10,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.4.4.2")]
-[assembly: AssemblyFileVersion("1.4.4.2")]
+[assembly: AssemblyVersion("1.4.4.3")]
+[assembly: AssemblyFileVersion("1.4.4.3")]
 

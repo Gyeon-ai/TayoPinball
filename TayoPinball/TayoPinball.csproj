@@ -41,9 +41,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="SelfUpdater.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\update-public-key.xml">
+      <Link>update-public-key.xml</Link>
+      <LogicalName>TayoPinballUpdatePublicKey</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="logo.png">
       <LogicalName>TayoPinballLogo</LogicalName>
     </EmbeddedResource>

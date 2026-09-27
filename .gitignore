@@ -7,3 +7,8 @@ dist/
 *.cache
 *.pdb
 *.log
+update-signing-key.dat
+*.private-key.*
+*.pfx
+*.p12
+*.tayokey

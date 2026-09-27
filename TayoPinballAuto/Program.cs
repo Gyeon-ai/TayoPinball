@@ -23,8 +23,13 @@ namespace SoopPinballCollector
     internal static class Program
     {
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
+            if (SelfUpdater.TryHandleApplyMode(args, UpdateProduct.Auto))
+            {
+                return;
+            }
+
             try
             {
                 Application.EnableVisualStyles();
@@ -38,7 +43,13 @@ namespace SoopPinballCollector
                 {
                     WriteCrashLog(e.ExceptionObject as Exception);
                 };
-                Application.Run(new MainForm());
+                var mainForm = new MainForm();
+                mainForm.Shown += delegate
+                {
+                    SelfUpdater.SignalSuccessfulStartup(args);
+                    SelfUpdater.BeginUpdateCheck(mainForm, UpdateProduct.Auto);
+                };
+                Application.Run(mainForm);
             }
             catch (Exception ex)
             {

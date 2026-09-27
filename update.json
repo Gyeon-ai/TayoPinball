@@ -1,0 +1,15 @@
+{
+    "SchemaVersion":  2,
+    "Version":  "1.4.4.3",
+    "ReleaseNotes":  "서명 검증 자동 업데이트 기능을 추가했습니다.",
+    "Standard":  {
+                     "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC.exe",
+                     "Sha256":  "A4C8D461259A47FFFB1B2C7039F70059D0818F340ABB0A0DEFBBF7CBB574E3C3",
+                     "Size":  2479616
+                 },
+    "Auto":  {
+                 "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC%28%EC%9E%90%EB%8F%99%29.exe",
+                 "Sha256":  "010AACA6D10E5E64A136F5F664AE4E5879EFA840AB824318280E5419A9931C59",
+                 "Size":  2495488
+             }
+}

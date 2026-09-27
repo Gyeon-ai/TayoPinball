@@ -32,7 +32,6 @@ $projects = @(
     }
 )
 
-$readmePath = Join-Path $root 'README.md'
 $manifestPath = Join-Path $root 'update.json'
 $manifestSignaturePath = Join-Path $root 'update.json.sig'
 $publicKeyPath = Join-Path $root 'update-public-key.xml'
@@ -244,7 +243,6 @@ try {
         Backup-File $project.AssemblyInfo
         Backup-File $project.ReleaseExe
     }
-    Backup-File $readmePath
     Backup-File $manifestPath
     Backup-File $manifestSignaturePath
 
@@ -307,31 +305,13 @@ try {
         throw "Update signature test failed with exit code $LASTEXITCODE."
     }
 
-    $readme = [IO.File]::ReadAllText($readmePath)
-    foreach ($project in $projects) {
-        $fileName = [IO.Path]::GetFileName($project.ReleaseExe)
-        $escapedFileName = [Regex]::Escape($fileName)
-        $hash = $releaseData[$project.ManifestKey].Sha256
-        $pattern = '(?m)^\| `' + $escapedFileName + '` \| `[0-9A-F]{64}` \|$'
-        $replacement = '| `' + $fileName + '` | `' + $hash + '` |'
-        if (![Regex]::IsMatch($readme, $pattern)) {
-            throw "README hash row was not found: $fileName"
-        }
-        $readme = [Regex]::Replace($readme, $pattern, $replacement)
-    }
-    $readme = [Regex]::Replace(
-        $readme,
-        '(?m)^- Version: \d+\.\d+\.\d+\.\d+$',
-        '- Version: ' + $nextVersion.ToString())
-    [IO.File]::WriteAllText($readmePath, $readme, $utf8NoBom)
-
     $completed = $true
     Write-Host "Prepared release $nextVersion"
     foreach ($project in $projects) {
         $data = $releaseData[$project.ManifestKey]
         Write-Host "$($project.Name): $($data.Sha256) ($($data.Size) bytes)"
     }
-    Write-Host 'Review and test the changes before committing or pushing.'
+    Write-Host 'Update the README patch notes, then review and test before committing or pushing.'
 }
 finally {
     if (!$completed) {
@@ -339,7 +319,6 @@ finally {
             Restore-File $project.AssemblyInfo
             Restore-File $project.ReleaseExe
         }
-        Restore-File $readmePath
         Restore-File $manifestPath
         Restore-File $manifestSignaturePath
         if (!$signatureExisted -and (Test-Path -LiteralPath $manifestSignaturePath)) {

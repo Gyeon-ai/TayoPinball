@@ -252,6 +252,13 @@ try {
     }
     $nextVersion = if ($RebuildCurrentVersion) { $versions[0] } else { Get-NextUpdateVersion $versions[0] }
 
+    if (Test-Path -LiteralPath $manifestPath) {
+        $publishedManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+        if ($nextVersion -le [Version]$publishedManifest.Version) {
+            throw 'The release version must be newer than the existing signed manifest.'
+        }
+    }
+
     foreach ($project in $projects) {
         Set-AssemblyVersion -Path $project.AssemblyInfo -Version $nextVersion
     }
@@ -327,5 +334,11 @@ finally {
         Remove-NewNumberedArtifacts
     }
 
-    Remove-Item -LiteralPath $backupDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    $safeTemporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    $resolvedBackupDirectory = [IO.Path]::GetFullPath($backupDirectory)
+    if (!$resolvedBackupDirectory.StartsWith($safeTemporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($resolvedBackupDirectory) -notmatch '^TayoPinballRelease-[a-f0-9]{32}$') {
+        throw 'Unsafe release backup cleanup path.'
+    }
+    Remove-Item -LiteralPath $resolvedBackupDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }

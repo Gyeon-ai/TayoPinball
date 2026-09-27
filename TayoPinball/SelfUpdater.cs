@@ -216,6 +216,7 @@ namespace SoopPinballCollector
                 throw new InvalidDataException("업데이트 정보 크기가 허용 범위를 벗어났습니다.");
             }
 
+            // 서명 검증을 마친 원문만 파싱해 다운로드 주소와 해시를 신뢰한다.
             VerifyManifestSignature(manifestBytes, signatureDocumentBytes);
 
             string json;
@@ -467,6 +468,7 @@ namespace SoopPinballCollector
             string signalPath = Path.Combine(Path.GetTempPath(), "TayoPinballUpdate-" + startupToken + ".signal");
             SafeDelete(signalPath);
 
+            // 새 프로세스의 시작 확인 신호를 받을 때까지 기존 EXE를 복구용으로 보관한다.
             string backupPath = ReplaceExecutable(sourcePath, targetPath, sourceHash);
             Process updatedProcess = null;
             try

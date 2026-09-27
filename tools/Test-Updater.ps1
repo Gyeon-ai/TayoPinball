@@ -178,7 +178,13 @@ foreach ($product in $products) {
     }
     finally {
         if (Test-Path -LiteralPath $testDirectory) {
-            Remove-Item -LiteralPath $testDirectory -Recurse -Force
+            $resolvedTestDirectory = [IO.Path]::GetFullPath($testDirectory)
+            $safeTemporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+            if (!$resolvedTestDirectory.StartsWith($safeTemporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                [IO.Path]::GetFileName($resolvedTestDirectory) -notmatch '^TayoUpdaterAudit-(standard|auto)-[a-f0-9]{32}$') {
+                throw 'Unsafe updater audit cleanup path.'
+            }
+            Remove-Item -LiteralPath $resolvedTestDirectory -Recurse -Force
         }
     }
 

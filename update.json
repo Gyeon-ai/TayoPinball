@@ -1,16 +1,16 @@
 {
     "SchemaVersion":  2,
     "ProductId":  "Gyeon-ai/TayoPinball",
-    "Version":  "1.4.4.6",
-    "ReleaseNotes":  "업데이트 안내창의 글씨와 둥근 버튼을 개선하고, 본 프로그램의 내용·코인·저장 버튼 가독성을 조정했습니다. 닉네임·후원 정보 크기와 수집·코인 규칙은 유지합니다.",
+    "Version":  "1.4.4.7",
+    "ReleaseNotes":  "업데이트 안내창의 패치 설명을 테두리 박스로 구분하고, 상단 제목과 닫기 버튼의 정렬 및 좌우·하단 여백을 다듬었습니다. 본 프로그램의 글씨와 수집·코인 계산 규칙은 그대로입니다.",
     "Standard":  {
                      "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC.exe",
-                     "Sha256":  "941EB5CF07166BD85ECB380772B2384A4AED5CFC5D23810F66546472F5357362",
+                     "Sha256":  "51B74C69CE62059A70D76E10599301B012CD8F766A1D974CF490FF157D33C49C",
                      "Size":  2483712
                  },
     "Auto":  {
                  "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC%28%EC%9E%90%EB%8F%99%29.exe",
-                 "Sha256":  "DCB9C863FBE828EA51AD5DCACD90471177AC51F667769D28F33E84A007D2A38F",
-                 "Size":  2499072
+                 "Sha256":  "862469A8C962C1002B07BA452504FD5B0D8A570D17FD414FE490101B3AB368DB",
+                 "Size":  2499584
              }
 }

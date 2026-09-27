@@ -292,6 +292,7 @@ try {
 
     $manifest = [ordered]@{
         SchemaVersion = 2
+        ProductId = 'Gyeon-ai/TayoPinball'
         Version = $nextVersion.ToString()
         ReleaseNotes = $ReleaseNotes.Trim()
         Standard = $releaseData['Standard']

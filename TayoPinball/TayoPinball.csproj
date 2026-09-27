@@ -42,6 +42,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="SelfUpdater.cs" />
+    <Compile Include="UpdateDialogs.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

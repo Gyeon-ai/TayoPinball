@@ -462,7 +462,7 @@ namespace SoopPinballCollector
             _streamLabel = SmallHeader("방송 주소 또는 SOOP ID");
             _setupCard.Controls.Add(_streamLabel);
 
-            _streamInput = new RoundTextBox();
+            _streamInput = new RoundTextBox(10.0f);
             _streamInput.Placeholder = "예: SOOP 방송 주소 또는 SOOP ID";
             _setupCard.Controls.Add(_streamInput);
 
@@ -556,7 +556,7 @@ namespace SoopPinballCollector
             _collectionTitle = PlainLabel("수집된 핀볼 내용", 13.7f, FontStyle.Bold, _text);
             _collectionCard.Controls.Add(_collectionTitle);
 
-            _searchInput = new RoundTextBox();
+            _searchInput = new RoundTextBox(10.0f);
             _searchInput.Placeholder = "닉네임, 내용, 후원 종류, 코인 검색";
             _searchRefreshTimer.Interval = 160;
             _searchRefreshTimer.Tick += delegate
@@ -606,7 +606,7 @@ namespace SoopPinballCollector
             _emptyTitle.TextAlign = ContentAlignment.MiddleCenter;
             _emptyState.Controls.Add(_emptyTitle);
 
-            _emptyText = PlainLabel("정해진 별풍선 조건을 보낸 시청자의\r\n다음 채팅 1회가 여기에 추가됩니다.", 8.9f, FontStyle.Regular, _muted);
+            _emptyText = PlainLabel("정해진 별풍선 조건을 보낸 시청자의\r\n다음 채팅 1회가 여기에 추가됩니다.", 10.0f, FontStyle.Regular, _muted);
             _emptyText.TextAlign = ContentAlignment.MiddleCenter;
             _emptyState.Controls.Add(_emptyText);
 
@@ -643,7 +643,7 @@ namespace SoopPinballCollector
             _pinballCountLabel.TextAlign = ContentAlignment.MiddleRight;
             _pinballCard.Controls.Add(_pinballCountLabel);
 
-            _pinballText = new RoundTextBox();
+            _pinballText = new RoundTextBox(10.0f);
             _pinballText.Multiline = true;
             _pinballText.Placeholder = "수집된 내용이 이곳에 표시됩니다";
             _pinballText.InnerTextChanged += delegate
@@ -664,9 +664,11 @@ namespace SoopPinballCollector
             _pinballCard.Controls.Add(_openPinballButton);
 
             _copyButton = SecondaryButton("내용 복사");
+            _copyButton.Font = UiFont.Make(9.5f, FontStyle.Bold);
             _pinballCard.Controls.Add(_copyButton);
 
             _saveButton = SecondaryButton("메모장 저장");
+            _saveButton.Font = UiFont.Make(9.5f, FontStyle.Bold);
             _pinballCard.Controls.Add(_saveButton);
 
         }
@@ -877,7 +879,7 @@ namespace SoopPinballCollector
             int fieldW = width - (pad * 2);
             int halfW = (fieldW - 8) / 2;
 
-            _streamLabel.SetBounds(pad, 18, fieldW, 18);
+            _streamLabel.SetBounds(pad, 18, fieldW, 20);
             _streamInput.SetBounds(pad, 42, fieldW, 36);
             _connectButton.SetBounds(pad, 88, fieldW, 44);
 
@@ -885,19 +887,19 @@ namespace SoopPinballCollector
             const int labelToControlGap = 6;
             int thresholdLabelY = _connectButton.Bottom + sectionGap;
             int thresholdControlsY = thresholdLabelY + 18 + labelToControlGap;
-            _thresholdLabel.SetBounds(pad, thresholdLabelY, fieldW, 18);
+            _thresholdLabel.SetBounds(pad, thresholdLabelY, fieldW, 20);
             _thresholdInput.SetBounds(pad, thresholdControlsY, halfW, 36);
             _targetButton.SetBounds(pad + halfW + 8, thresholdControlsY, halfW, 36);
 
             int conditionLabelY = thresholdControlsY + 36 + sectionGap;
             int conditionControlsY = conditionLabelY + 18 + labelToControlGap;
-            _conditionLabel.SetBounds(pad, conditionLabelY, fieldW, 18);
+            _conditionLabel.SetBounds(pad, conditionLabelY, fieldW, 20);
             _exactButton.SetBounds(pad, conditionControlsY, halfW, 36);
             _atLeastButton.SetBounds(pad + halfW + 8, conditionControlsY, halfW, 36);
 
             int sourceLabelY = conditionControlsY + 36 + sectionGap;
             int sourceControlsY = sourceLabelY + 18 + labelToControlGap;
-            _sourceLabel.SetBounds(pad, sourceLabelY, fieldW, 18);
+            _sourceLabel.SetBounds(pad, sourceLabelY, fieldW, 20);
             _nicknameSourceButton.SetBounds(pad, sourceControlsY, halfW, 36);
             _contentSourceButton.SetBounds(pad + halfW + 8, sourceControlsY, halfW, 36);
         }
@@ -2674,7 +2676,7 @@ namespace SoopPinballCollector
 
         private Label SmallHeader(string text)
         {
-            return PlainLabel(text, 8.8f, FontStyle.Bold, _text);
+            return PlainLabel(text, 9.5f, FontStyle.Bold, _text);
         }
 
         private Label Eyebrow(string text)
@@ -2724,7 +2726,7 @@ namespace SoopPinballCollector
         private RoundButton SegmentButton(string text)
         {
             var button = BaseButton(text);
-            button.Font = UiFont.Make(8.9f, FontStyle.Bold);
+            button.Font = UiFont.Make(9.5f, FontStyle.Bold);
             return button;
         }
 
@@ -3994,7 +3996,7 @@ namespace SoopPinballCollector
 
             _indexBadge = new PillLabel();
             _indexBadge.Text = _index.ToString();
-            _indexBadge.Font = UiFont.Make(8.6f, FontStyle.Bold);
+            _indexBadge.Font = UiFont.Make(9.0f, FontStyle.Bold);
             _indexBadge.ForeColor = _purple;
             _indexBadge.FillColor = _lavender;
             _indexBadge.BorderColor = _lavender;
@@ -4015,7 +4017,7 @@ namespace SoopPinballCollector
             _nameBox.BorderStyle = BorderStyle.None;
             _nameBox.BackColor = _editFill;
             _nameBox.ForeColor = _text;
-            _nameBox.Font = UiFont.Make(9.8f, FontStyle.Bold);
+            _nameBox.Font = UiFont.Make(10.5f, FontStyle.Regular);
             _nameBox.TextAlign = HorizontalAlignment.Center;
             _nameBox.Text = _entry.PinballName;
             _nameBox.TextChanged += delegate
@@ -4069,7 +4071,7 @@ namespace SoopPinballCollector
             _coinBox.BorderStyle = BorderStyle.None;
             _coinBox.BackColor = _lavender;
             _coinBox.ForeColor = Color.FromArgb(13, 49, 133);
-            _coinBox.Font = UiFont.Make(8.5f, FontStyle.Bold);
+            _coinBox.Font = UiFont.Make(9.5f, FontStyle.Bold);
             _coinBox.TextAlign = HorizontalAlignment.Center;
             _coinBox.Text = GetCoinDisplayText();
             _coinBox.TextChanged += delegate
@@ -5758,7 +5760,11 @@ namespace SoopPinballCollector
             QueueTextScrollRefresh();
         }
 
-        public RoundTextBox()
+        public RoundTextBox() : this(9.5f)
+        {
+        }
+
+        public RoundTextBox(float textSize)
         {
             Placeholder = "";
             _suffixText = "";
@@ -5774,7 +5780,7 @@ namespace SoopPinballCollector
             _box.BorderStyle = BorderStyle.None;
             _box.BackColor = FillColor;
             _box.ForeColor = Color.FromArgb(9, 17, 39);
-            _box.Font = UiFont.Make(9.5f, FontStyle.Regular);
+            _box.Font = UiFont.Make(textSize, FontStyle.Regular);
             _box.TextChanged += delegate
             {
                 if (!_placeholderActive && InnerTextChanged != null)
@@ -5829,7 +5835,7 @@ namespace SoopPinballCollector
             if (!Focused && !_box.Focused && _box.Text.Length == 0 && Placeholder.Length > 0)
             {
                 _placeholderActive = true;
-                _box.ForeColor = Color.FromArgb(96, 114, 151);
+                _box.ForeColor = Color.FromArgb(68, 83, 111);
                 _box.Text = Placeholder;
             }
         }

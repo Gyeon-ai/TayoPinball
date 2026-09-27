@@ -22,6 +22,7 @@ namespace SoopPinballCollector
 
     internal sealed class UpdateManifest
     {
+        public string ProductId { get; set; }
         public int SchemaVersion { get; set; }
         public string Version { get; set; }
         public string ReleaseNotes { get; set; }
@@ -232,10 +233,7 @@ namespace SoopPinballCollector
             var serializer = new JavaScriptSerializer();
             serializer.MaxJsonLength = 64 * 1024;
             UpdateManifest manifest = serializer.Deserialize<UpdateManifest>(json);
-            if (manifest == null || manifest.SchemaVersion != 2)
-            {
-                throw new InvalidDataException("지원하지 않는 업데이트 정보 형식입니다.");
-            }
+            ValidateManifestIdentity(manifest);
 
             Version availableVersion;
             if (!Version.TryParse(manifest.Version, out availableVersion))
@@ -258,6 +256,16 @@ namespace SoopPinballCollector
                 ReleaseNotes = NormalizeReleaseNotes(manifest.ReleaseNotes),
                 File = file
             };
+        }
+
+        private static void ValidateManifestIdentity(UpdateManifest manifest)
+        {
+            // A shared publisher key authenticates the signer, not the intended product.
+            if (manifest == null || manifest.SchemaVersion != 2 ||
+                !String.Equals(manifest.ProductId, "Gyeon-ai/TayoPinball", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("지원하지 않는 업데이트 정보 형식입니다.");
+            }
         }
 
         private static string AddCacheToken(string url, string cacheToken)
@@ -978,70 +986,6 @@ namespace SoopPinballCollector
         }
     }
 
-    internal sealed class UpdatePromptDialog : Form
-    {
-        public UpdatePromptDialog(Version version, string releaseNotes)
-        {
-            Text = "업데이트 안내";
-            ClientSize = new Size(390, 190);
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            StartPosition = FormStartPosition.CenterParent;
-            ShowInTaskbar = false;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            BackColor = Color.FromArgb(251, 253, 255);
-            Font = UiFont.Make(9.0f, FontStyle.Regular);
-
-            var title = new Label();
-            title.Text = "새 버전을 사용할 수 있습니다";
-            title.SetBounds(24, 20, 342, 28);
-            title.Font = UiFont.Make(13.0f, FontStyle.Bold);
-            title.ForeColor = Color.FromArgb(10, 18, 34);
-            Controls.Add(title);
-
-            var versionLabel = new Label();
-            versionLabel.Text = "버전 " + version;
-            versionLabel.SetBounds(24, 52, 342, 22);
-            versionLabel.Font = UiFont.Make(9.0f, FontStyle.Bold);
-            versionLabel.ForeColor = Color.FromArgb(37, 99, 235);
-            Controls.Add(versionLabel);
-
-            var notes = new Label();
-            notes.Text = releaseNotes;
-            notes.SetBounds(24, 78, 342, 42);
-            notes.Font = UiFont.Make(8.8f, FontStyle.Regular);
-            notes.ForeColor = Color.FromArgb(68, 83, 111);
-            notes.AutoEllipsis = true;
-            Controls.Add(notes);
-
-            var laterButton = CreateButton("나중에", false);
-            laterButton.SetBounds(198, 138, 78, 34);
-            laterButton.DialogResult = DialogResult.Cancel;
-            Controls.Add(laterButton);
-
-            var updateButton = CreateButton("업데이트", true);
-            updateButton.SetBounds(286, 138, 80, 34);
-            updateButton.DialogResult = DialogResult.OK;
-            Controls.Add(updateButton);
-
-            AcceptButton = updateButton;
-            CancelButton = laterButton;
-        }
-
-        private static Button CreateButton(string text, bool primary)
-        {
-            var button = new Button();
-            button.Text = text;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.BorderColor = primary ? Color.FromArgb(37, 99, 235) : Color.FromArgb(180, 205, 242);
-            button.BackColor = primary ? Color.FromArgb(37, 99, 235) : Color.White;
-            button.ForeColor = primary ? Color.White : Color.FromArgb(49, 67, 104);
-            button.Font = UiFont.Make(9.0f, FontStyle.Bold);
-            button.Cursor = Cursors.Hand;
-            return button;
-        }
-    }
 
     internal sealed class UpdateProgressDialog : Form
     {

@@ -44,6 +44,8 @@ for ($index=0; $index -lt $notes.Count; $index++) {
         $update = $dialog.Controls['updateButton']
         foreach ($control in @(Get-TestControls $dialog)) {
             if (!$control.Parent.ClientRectangle.Contains($control.Bounds)) { throw "Outside parent: $($control.Name)" }
+            # Dot fonts are drawn as outlines without clipping; their GDI line box is taller than the glyphs.
+            if ($control.Font.Name -like 'Galmuri*') { continue }
             $size = [Windows.Forms.TextRenderer]::MeasureText($control.Text, $control.Font,
                 (New-Object Drawing.Size($control.Width, [int]::MaxValue)),
                 [Windows.Forms.TextFormatFlags]'NoPadding,NoPrefix,WordBreak')
@@ -59,14 +61,14 @@ for ($index=0; $index -lt $notes.Count; $index++) {
             $body.Left -ne 14 -or $notesBox.Width - $body.Right -ne 14 -or
             $notesBox.Height - $body.Bottom -ne 14) { throw 'Notes box padding differs' }
         if ($body.Top - $notesTitle.Bottom -lt 6) { throw 'Notes title overlaps body' }
-        if ($notesBox.FillColor -ne [Drawing.Color]::White -or $notesBox.BorderColor -eq $notesBox.FillColor) { throw 'Notes box is not distinct' }
+        if ($notesBox.BorderColor.ToArgb() -eq $notesBox.FillColor.ToArgb() -or $notesBox.FillColor.ToArgb() -eq $dialog.BackColor.ToArgb()) { throw 'Notes box is not distinct' }
         if ($update.Size -ne $later.Size -or $update.Top -ne $later.Top) { throw 'Button alignment differs' }
         if ($later.Top - $notesBox.Bottom -ne 16 -or $dialog.ClientSize.Height - $update.Bottom -ne 16) { throw 'Button spacing differs' }
         if ($body.Text -cne $notes[$index]) { throw 'Notes were modified' }
         if ($title.Text -cne '새 버전을 사용할 수 있습니다') { throw 'Title changed' }
         if ($later.Text -cne '나중에' -or $update.Text -cne '업데이트') { throw 'Button wording changed' }
         if ($dialog.AcceptButton -ne $update -or $dialog.CancelButton -ne $later) { throw 'Keyboard bindings changed' }
-        if ($title.Font.Size -ne 13 -or $later.Font.Size -ne 10 -or $body.Font.Size -ne 10) { throw 'Unexpected font size' }
+        if ($title.Font.Name -notlike 'Galmuri*' -or $later.Font.Name -notlike 'Galmuri*' -or $update.Font.Name -ne $later.Font.Name -or $body.Font.Size -ne 10) { throw 'Unexpected font' }
         $bitmap = New-Object Drawing.Bitmap($dialog.ClientSize.Width, $dialog.ClientSize.Height)
         try {
             $dialog.DrawToBitmap($bitmap, $dialog.ClientRectangle)

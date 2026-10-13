@@ -41,6 +41,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="ArcadeMainForm.cs" />
+    <Compile Include="..\TayoPinball\ArcadeUi.cs">
+      <Link>ArcadeUi.cs</Link>
+    </Compile>
     <Compile Include="SelfUpdater.cs" />
     <Compile Include="UpdateDialogs.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -55,6 +59,26 @@
     </EmbeddedResource>
     <EmbeddedResource Include="app.ico">
       <LogicalName>TayoPinballIcon</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\TayoPinball\arcade-icon.png">
+      <Link>arcade-icon.png</Link>
+      <LogicalName>TayoPinballArcadeIcon</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\TayoPinball\fonts\Galmuri11.ttf" Condition="Exists('..\TayoPinball\fonts\Galmuri11.ttf')">
+      <Link>fonts\Galmuri11.ttf</Link>
+      <LogicalName>ArcadeFontGalmuri11</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\TayoPinball\fonts\Galmuri11-Bold.ttf" Condition="Exists('..\TayoPinball\fonts\Galmuri11-Bold.ttf')">
+      <Link>fonts\Galmuri11-Bold.ttf</Link>
+      <LogicalName>ArcadeFontGalmuri11Bold</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\TayoPinball\fonts\PressStart2P-Regular.ttf" Condition="Exists('..\TayoPinball\fonts\PressStart2P-Regular.ttf')">
+      <Link>fonts\PressStart2P-Regular.ttf</Link>
+      <LogicalName>ArcadeFontPressStart2P</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\TayoPinball\fonts\DoHyeon-Regular.ttf" Condition="Exists('..\TayoPinball\fonts\DoHyeon-Regular.ttf')">
+      <Link>fonts\DoHyeon-Regular.ttf</Link>
+      <LogicalName>ArcadeFontDoHyeon</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

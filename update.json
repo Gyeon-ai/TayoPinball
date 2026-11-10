@@ -1,16 +1,16 @@
 {
     "SchemaVersion":  2,
     "ProductId":  "Gyeon-ai/TayoPinball",
-    "Version":  "1.4.4.9",
-    "ReleaseNotes":  "화면을 새 디자인으로 바꿨습니다. 대결미션 수집, 보너스 +1 선택, 수집 대기 목록, 직접 추가, 메모장을 추가했고 설정과 수집 목록이 자동으로 저장됩니다. 새로 수집된 내용은 목록 맨 위에 추가됩니다.",
+    "Version":  "1.4.5.0",
+    "ReleaseNotes":  "보안과 안정성을 개선했습니다. 화면과 수집·코인 규칙은 그대로입니다.",
     "Standard":  {
                      "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC.exe",
-                     "Sha256":  "151F770DFA82219230258F0D26D856635C7EF267A97BA692B141371D1A9C6D60",
+                     "Sha256":  "6FC3C489879D3DFF4995F1C026CB5BE03E07C651D0BF8E3B28CAC0E6F2EF93FC",
                      "Size":  11404288
                  },
     "Auto":  {
                  "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC%28%EC%9E%90%EB%8F%99%29.exe",
-                 "Sha256":  "849F4B680C45EBAC8F81AC2F007BE7BA7EBEC7D728C9768C5B34395EB9CA79B1",
+                 "Sha256":  "1F9FDD44578C63E43FE6E74229D02462DC246C7B4309C26B9284C3667D233307",
                  "Size":  11421184
              }
 }

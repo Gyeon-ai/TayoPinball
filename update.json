@@ -1,16 +1,16 @@
 {
     "SchemaVersion":  2,
     "ProductId":  "Gyeon-ai/TayoPinball",
-    "Version":  "1.4.5.0",
-    "ReleaseNotes":  "보안과 안정성을 개선했습니다. 화면과 수집·코인 규칙은 그대로입니다.",
+    "Version":  "1.4.5.1",
+    "ReleaseNotes":  "자동판에서 쓰던 브라우저 임시 폴더가 쌓이지 않도록 정리 기능을 추가했습니다. 프로그램을 켜면 예전에 남은 임시 폴더도 정리합니다. 화면과 수집·코인 규칙은 그대로입니다.",
     "Standard":  {
                      "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC.exe",
-                     "Sha256":  "6FC3C489879D3DFF4995F1C026CB5BE03E07C651D0BF8E3B28CAC0E6F2EF93FC",
+                     "Sha256":  "16F2328A1965298AE1EF4057AE737CFF856B57891F316365C8751B0BFE391821",
                      "Size":  11404288
                  },
     "Auto":  {
                  "Url":  "https://github.com/Gyeon-ai/TayoPinball/raw/refs/heads/main/%ED%83%80%EC%9A%94%EC%9D%98%20%EC%A2%85%EA%B2%9C%ED%95%80%EB%B3%BC%28%EC%9E%90%EB%8F%99%29.exe",
-                 "Sha256":  "1F9FDD44578C63E43FE6E74229D02462DC246C7B4309C26B9284C3667D233307",
-                 "Size":  11421184
+                 "Sha256":  "970A81E7F34C95876879E09A5AB981594BA7E132AEB19CB9CE47AE22EF02F734",
+                 "Size":  11424256
              }
 }
